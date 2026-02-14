@@ -1100,10 +1100,6 @@ get_clicked_region <- function(click, df_counts, region_ids_present) {
 create_venn_diagram <- function(sets_named_list, set_names, circle_fills, highlight_region = NULL) {
   n_sets <- length(sets_named_list)
   if (n_sets < 2L || n_sets > 5L) return(NULL)
-  if (requireNamespace("futile.logger", quietly = TRUE)) {
-    old_thresh <- futile.logger::flog.threshold(futile.logger::ERROR, name = "VennDiagramLogger")
-    on.exit(futile.logger::flog.threshold(old_thresh, name = "VennDiagramLogger"), add = TRUE)
-  }
   fill_vec <- if (!is.null(circle_fills) && length(circle_fills) == n_sets) unname(circle_fills[set_names]) else get_circle_fills(n_sets)
   base_venn <- tryCatch({
     VennDiagram::venn.diagram(
@@ -1893,7 +1889,8 @@ repeat {
                             cat.fontface = "bold",
                             cat.fontfamily = "sans",
                             # rotation = 1,
-                            main = paste("Default Venn Diagram:", category)
+                            main = paste("Default Venn Diagram:", category),
+                            disable.logging = TRUE
                         )
                         grid.draw(venn.plot)
                         dev.off()
