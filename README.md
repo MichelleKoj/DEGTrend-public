@@ -10,15 +10,16 @@
 ## Table of Contents
 
 1. [What You Need Before Starting](#what-you-need-before-starting)
-2. [Required R Packages (Optional Pre-Install)](#required-r-packages-optional-pre-install)
-3. [How to Run DEGTrend](#how-to-run-degtrend)
-4. [First Time: Package Installation](#first-time-package-installation)
-5. [Step-by-Step: Using the Program](#step-by-step-using-the-program)
-6. [Main Menu Options Explained](#main-menu-options-explained)
-7. [Input Files: What You Need](#input-files-what-you-need)
-8. [Where Your Results Are Saved](#where-your-results-are-saved)
-9. [Useful Commands While Running](#useful-commands-while-running)
-10. [Troubleshooting](#troubleshooting)
+2. [Example Data](#example-data)
+3. [Required R Packages (Optional Pre-Install)](#required-r-packages-optional-pre-install)
+4. [How to Run DEGTrend](#how-to-run-degtrend)
+5. [First Time: Package Installation](#first-time-package-installation)
+6. [Step-by-Step: Using the Program](#step-by-step-using-the-program)
+7. [Main Menu Options Explained](#main-menu-options-explained)
+8. [Input Files: What You Need](#input-files-what-you-need)
+9. [Where Your Results Are Saved](#where-your-results-are-saved)
+10. [Useful Commands While Running](#useful-commands-while-running)
+11. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -30,6 +31,16 @@
 - **A folder** where you want all results to be saved (the program will ask you for this).
 
 You do **not** need to install R packages yourself; DEGTrend will install them the first time you run it (see [First Time: Package Installation](#first-time-package-installation)). If you prefer to install everything **before** running the script, use the section below.
+
+---
+
+## Example Data
+
+Example data for DEGTrend is available in the following Google Drive folder:
+
+**[Example data (Google Drive)](https://drive.google.com/drive/folders/1HgtBbxDIWFP47Bp6M3hT0WvLkLlPJlVE?usp=sharing)**
+
+This folder is open for **HUJI (Hebrew University of Jerusalem) students**.
 
 ---
 
