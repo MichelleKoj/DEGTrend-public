@@ -131,6 +131,19 @@ get_venn_upset_path <- function(filename, subdir = "") {
     dir.create(dir_path, recursive = TRUE, showWarnings = FALSE)
     file.path(dir_path, filename)
 }
+
+# From comparison strings "X vs Y", extract reference Y and return table of counts per reference.
+get_reference_table_from_comparisons <- function(comparisons) {
+    if (length(comparisons) == 0) return(structure(integer(0L), .Dim = 0L, .Dimnames = list(NULL), class = "table"))
+    refs <- vapply(comparisons, function(c) {
+        parts <- trimws(strsplit(as.character(c), " vs ")[[1]])
+        if (length(parts) >= 2) parts[2] else NA_character_
+    }, character(1))
+    refs <- refs[!is.na(refs)]
+    if (length(refs) == 0) return(structure(integer(0L), .Dim = 0L, .Dimnames = list(NULL), class = "table"))
+    table(refs)
+}
+
 get_trending_path <- function(filename) {
     dir_path <- file.path(output_dir, "trending")
     dir.create(dir_path, recursive = TRUE, showWarnings = FALSE)
@@ -309,8 +322,14 @@ heatmap_v <- function(mat, plot_incl, cols = c("red", "black", "blue"), col_bias
 
 # helper function for venn diagrams
 generate_gene_table <- function(selected_genes, category_names, output_file_name = "gene_table.csv") {
-    # Ensure `output_file_name` is just the file name, not a full path
-    output_file_name <- basename(output_file_name)
+    # If a full path was given (contains path separator), use it; otherwise use output_dir with basename
+    has_path <- grepl("/", output_file_name, fixed = TRUE) || grepl(.Platform$file.sep, output_file_name, fixed = TRUE)
+    if (has_path) {
+        output_file <- output_file_name
+        dir.create(dirname(output_file), recursive = TRUE, showWarnings = FALSE)
+    } else {
+        output_file <- get_output_path(basename(output_file_name))
+    }
 
     # Initialize an empty data frame to store results
     gene_table <- data.frame(Gene = character(), Segment = character(), stringsAsFactors = FALSE)
@@ -335,9 +354,6 @@ generate_gene_table <- function(selected_genes, category_names, output_file_name
         }
     })
     gene_table <- data.frame(Gene = all_genes, Segment = gene_segments, stringsAsFactors = FALSE)
-
-    # Define the output file path using `get_output_path`
-    output_file <- get_output_path(output_file_name)
 
     # Debug: Print output file path
     cat("Writing to file:", output_file, "\n")
@@ -1130,8 +1146,25 @@ create_venn_diagram <- function(sets_named_list, set_names, circle_fills, highli
   base_venn
 }
 
+# Compute UpSet plot dimensions so bars and labels remain visible for many intersections.
+upset_plot_dimensions <- function(n_bars,
+                                  min_width_in = 10,
+                                  min_height_in = 6.5,
+                                  inches_per_bar = 0.4,
+                                  height_per_bar_in = 0.1,
+                                  max_width_in = 100,
+                                  max_height_in = 60) {
+  width_in <- max(min_width_in, 2 + n_bars * inches_per_bar)
+  height_in <- max(min_height_in, 5 + n_bars * height_per_bar_in)
+  width_in <- min(width_in, max_width_in)
+  height_in <- min(height_in, max_height_in)
+  list(width = width_in, height = height_in)
+}
+
 build_upset_ggplot <- function(counts_df, region_colors, x_lab, y_lab) {
   region_levels <- counts_df[["region"]]
+  n_bars <- nrow(counts_df)
+  bottom_pt <- min(200, 45 + max(0, (n_bars - 15) * 2))
   ggplot2::ggplot(counts_df, ggplot2::aes(x = factor(region, levels = region_levels), y = count, fill = region)) +
     ggplot2::geom_col(colour = "black", linewidth = 0.9) +
     ggplot2::scale_fill_manual(values = region_colors, guide = "none") +
@@ -1144,7 +1177,7 @@ build_upset_ggplot <- function(counts_df, region_colors, x_lab, y_lab) {
       axis.text.y = ggplot2::element_text(size = 10),
       axis.title.y = ggplot2::element_text(size = 11),
       axis.title.x = ggplot2::element_text(size = 11),
-      plot.margin = ggplot2::margin(55, 45, 45, 45)
+      plot.margin = ggplot2::margin(55, 45, bottom_pt, 45)
     ) +
     ggplot2::labs(x = x_lab, y = y_lab)
 }
@@ -1172,9 +1205,10 @@ export_venn_upset <- function(sets_named_list, subdir = "") {
   tryCatch({ create_venn_diagram(sets_named_list, set_names, circle_fills, NULL) }, finally = grDevices::dev.off())
   grDevices::svg(get_venn_upset_path("Venn.svg", subdir), width = 10, height = 10, bg = "white")
   tryCatch({ create_venn_diagram(sets_named_list, set_names, circle_fills, NULL) }, finally = grDevices::dev.off())
+  dims <- upset_plot_dimensions(nrow(df_counts))
   g <- build_upset_ggplot(df_counts, region_colors, "Intersection of Sets", "Number of Genes")
-  ggplot2::ggsave(get_venn_upset_path("UpSet.png", subdir), plot = g, width = 10, height = 6.5, units = "in", dpi = 150, limitsize = FALSE)
-  ggplot2::ggsave(get_venn_upset_path("UpSet.svg", subdir), plot = g, device = "svg", width = 10, height = 6.5, units = "in", limitsize = FALSE)
+  ggplot2::ggsave(get_venn_upset_path("UpSet.png", subdir), plot = g, width = dims$width, height = dims$height, units = "in", dpi = 150, limitsize = FALSE)
+  ggplot2::ggsave(get_venn_upset_path("UpSet.svg", subdir), plot = g, device = "svg", width = dims$width, height = dims$height, units = "in", limitsize = FALSE)
   write.csv(df_counts, get_venn_upset_path("UpSet_counts.csv", subdir), row.names = FALSE)
   long <- do.call(rbind, lapply(region_ids_present, function(rid) {
     genes <- region_to_genes[[rid]]
@@ -1502,12 +1536,24 @@ repeat {
             # Proceed to downstream analysis menu
             # **Downstream Analysis Menu**
             # User chooses automatic or manual analysis
-            cat("\nSelect analysis mode:\n")
-            cat("[1] Automatic Streamlined Analysis (Heatmap, Venn, and Trending Plots)\n")
-            cat("[2] Manual Analysis\n")
-            analysis_mode_raw <- handle_quit(readline("Enter your choice (1 or 2), or type 'back' to return to main menu: "))
-            if (analysis_mode_raw == "back") break
-            analysis_mode <- as.numeric(analysis_mode_raw)
+            back_to_menu <- FALSE
+            repeat {
+                cat("\nSelect analysis mode:\n")
+                cat("[1] Automatic Streamlined Analysis (Heatmap, Venn, and Trending Plots)\n")
+                cat("[2] Manual Analysis\n")
+                analysis_mode_raw <- handle_quit(readline("Enter your choice (1 or 2), or type 'back' to return to main menu: "))
+                if (analysis_mode_raw == "back") {
+                    back_to_menu <- TRUE
+                    break
+                }
+                analysis_mode <- as.numeric(analysis_mode_raw)
+                if (is.na(analysis_mode) || !(analysis_mode %in% c(1, 2))) {
+                    cat("Invalid choice. Please enter 1 or 2, or type 'back' to return to main menu.\n")
+                    next
+                }
+                break
+            }
+            if (back_to_menu) break
 
             if (analysis_mode == 1) {
                 # **Automatic Analysis Pipeline**
@@ -1580,32 +1626,71 @@ repeat {
                     next
                 }
 
-                # Display unique conditions with indices
-                cat("Available unique conditions in your experiment:\n")
-                for (i in seq_along(unique_conditions)) {
-                    cat(sprintf("[%d] %s\n", i, unique_conditions[i]))
-                }
-
-                # Prompt user to select the control condition by index
-                control_index_input <- NULL
-                repeat {
-                    cat("Select the index of the control condition (or type 'back' to return to group selection):\n")
-                    control_index_input <- handle_quit(readline())
-                    if (control_index_input == "back") break
-                    control_index <- as.numeric(control_index_input)
-                    if (!is.na(control_index) && control_index >= 1 && control_index <= length(unique_conditions)) {
-                        control_condition <- unique_conditions[control_index]
-                        cat(sprintf("Selected control condition: %s\n", control_condition))
-                        break
+                # Infer or prompt for control condition from DEG comparisons
+                comparisons_for_control <- unique(degs_data$comparison)
+                ref_table <- get_reference_table_from_comparisons(comparisons_for_control)
+                use_global_control <- TRUE
+                control_condition <- NULL
+                if (length(comparisons_for_control) > 0 && length(ref_table) == 1 && ref_table[1] == length(comparisons_for_control)) {
+                    control_condition <- names(ref_table)[1]
+                    cat("Using control condition (in all comparisons):", control_condition, "\n")
+                } else {
+                    cat("Is there a control sample? (y/n), or type 'back' to return to group selection:\n")
+                    control_yn_raw <- handle_quit(readline())
+                    if (control_yn_raw == "back") next
+                    control_yn <- tolower(trimws(control_yn_raw))
+                    if (!control_yn %in% c("y", "n")) {
+                        cat("Please enter 'y' or 'n'.\n")
+                        next
+                    }
+                    if (control_yn == "y") {
+                        cat("Available unique conditions in your experiment:\n")
+                        for (i in seq_along(unique_conditions)) {
+                            cat(sprintf("[%d] %s\n", i, unique_conditions[i]))
+                        }
+                        control_index_input <- NULL
+                        repeat {
+                            cat("Select the index of the control condition (or type 'back' to return to group selection):\n")
+                            control_index_input <- handle_quit(readline())
+                            if (control_index_input == "back") break
+                            control_index <- as.numeric(control_index_input)
+                            if (!is.na(control_index) && control_index >= 1 && control_index <= length(unique_conditions)) {
+                                control_condition <- unique_conditions[control_index]
+                                cat(sprintf("Selected control condition: %s\n", control_condition))
+                                break
+                            } else {
+                                cat("Invalid index. Please select a valid index from the list.\n")
+                            }
+                        }
+                        if (control_index_input == "back") next
                     } else {
-                        cat("Invalid index. Please select a valid index from the list.\n")
+                        use_global_control <- FALSE
                     }
                 }
-                if (control_index_input == "back") next
 
                 # Create logged data matrix
                 tryCatch({
-                    control_samples <- rownames(coldata)[apply(coldata, 1, function(row) control_condition %in% row)]
+                    degs_data <- degs_data %>%
+                        mutate(
+                            Gene       = as.character(Gene),
+                            comparison = as.character(comparison)
+                        )
+
+                    best_per_gene <- degs_data %>%
+                        filter(!is.na(padj), padj < padj_threshold) %>%
+                        group_by(Gene) %>%
+                        slice_max(abs(log2FoldChange), n = 1, with_ties = FALSE) %>%
+                        ungroup() %>%
+                        mutate(
+                            comparison = paste0(
+                                comparison,
+                                ifelse(log2FoldChange > 0, "_up", "_down")
+                            )
+                        ) %>%
+                        select(Gene, comparison)
+
+                    if (use_global_control && !is.null(control_condition)) {
+                        control_samples <- rownames(coldata)[apply(coldata, 1, function(row) control_condition %in% row)]
                     cat("Control samples identified for the selected control condition:\n")
                     print(control_samples)
 
@@ -1630,37 +1715,8 @@ repeat {
 
                     # Remove rows with NA in logged_df
                     logged_df <- logged_df[complete.cases(logged_df), ]
-                    cat("Final logged data dimensions after removing NA rows:\n")
-                    print(dim(logged_df))
-                    # # Construct the full path for the logged data file
-                    # logged_df_file <- get_output_path("logged_df.csv")
-                    # # Save the logged data matrix
-                    # write.csv(logged_df, file = logged_df_file, row.names = TRUE)
-                    # # Inform the user about the file's location
-                    # cat("Logged data matrix saved to:", logged_df_file, "\n")
 
-                    ################## for haetmap_vd ##################
-                    degs_data <- degs_data %>%
-                    mutate(
-                        Gene       = as.character(Gene),
-                        comparison = as.character(comparison)
-                    )
-
-                    best_per_gene <- degs_data %>%
-                        filter(!is.na(padj), padj < padj_threshold) %>%
-                        group_by(Gene) %>%
-                        slice_max(abs(log2FoldChange), n = 1, with_ties = FALSE) %>%
-                        ungroup() %>%
-                        mutate(
-                            comparison = paste0(
-                            comparison,
-                            ifelse(log2FoldChange > 0, "_up", "_down")
-                            )
-                        ) %>%
-                        select(Gene, comparison)
-
-                    # 3. Bring your logged_df rownames into a “Gene” column
-                    logged_df_comp <- data.frame(
+                        logged_df_comp <- data.frame(
                         Gene = rownames(logged_df),
                         logged_df,
                         stringsAsFactors = FALSE,
@@ -1676,14 +1732,54 @@ repeat {
 
                     # remove any rows with NA in the comparison column
                     logged_df_comp <- logged_df_comp[!is.na(logged_df_comp$comparison), ]
+                    } else {
+                        if (!is.matrix(counts_data)) counts_data <- data.matrix(counts_data)
+                        genes_vec <- best_per_gene$Gene
+                        comp_full <- best_per_gene$comparison
+                        comp_str <- gsub("_up$|_down$", "", comp_full)
+                        comp_unique <- unique(comp_str)
+                        ref_avg_per_gene <- numeric(length(genes_vec))
+                        names(ref_avg_per_gene) <- genes_vec
+                        counts_mat <- as.matrix(counts_data)
+                        for (cu in comp_unique) {
+                            parts <- trimws(strsplit(cu, " vs ")[[1]])
+                            if (length(parts) < 2) next
+                            ref_condition <- parts[2]
+                            ref_samps <- rownames(coldata)[as.character(coldata[[group_col]]) == as.character(ref_condition)]
+                            ref_samps <- intersect(ref_samps, colnames(counts_mat))
+                            if (length(ref_samps) == 0) next
+                            idx <- which(comp_str == cu)
+                            genes_sub <- genes_vec[idx]
+                            genes_in_counts <- intersect(genes_sub, rownames(counts_mat))
+                            if (length(genes_in_counts) == 0) next
+                            ref_avg <- rowMeans(counts_mat[genes_in_counts, ref_samps, drop = FALSE], na.rm = TRUE)
+                            ref_avg_per_gene[genes_in_counts] <- ref_avg
+                        }
+                        genes_keep <- names(ref_avg_per_gene)[is.finite(ref_avg_per_gene)]
+                        if (length(genes_keep) == 0) {
+                            cat("Could not compute per-comparison reference for any gene. Skipping combined heatmaps.\n")
+                            next
+                        }
+                        ref_avg_vec <- ref_avg_per_gene[genes_keep]
+                        logged_mat <- log2((counts_mat[genes_keep, , drop = FALSE] + 1) / (ref_avg_vec + 1))
+                        logged_mat <- logged_mat[complete.cases(logged_mat), , drop = FALSE]
+                        genes_in_logged <- rownames(logged_mat)
+                        best_sub <- best_per_gene[best_per_gene$Gene %in% genes_in_logged, ]
+                        logged_df_comp <- data.frame(
+                            logged_mat,
+                            comparison = best_sub$comparison[match(genes_in_logged, best_sub$Gene)],
+                            stringsAsFactors = FALSE,
+                            check.names = FALSE
+                        )
+                        rownames(logged_df_comp) <- genes_in_logged
+                        logged_df_comp <- logged_df_comp[!is.na(logged_df_comp$comparison), , drop = FALSE]
+                        cat("Per-comparison reference: logged data dimensions:\n")
+                        print(dim(logged_df_comp))
+                    }
 
-                    # Inspect
-                    head(logged_df_comp)
                     write.csv(logged_df_comp, file = get_output_path("logged_df_comp.csv"), row.names = TRUE)
-                    # print how many genes in each group in comp
                     cat("Comparison groups in logged_df_comp:\n")
                     print(table(logged_df_comp$comparison))
-
 
                     scored_df <- as.matrix(counts_data)
                     scored_df_comp <- data.frame(
@@ -1700,7 +1796,7 @@ repeat {
                     scored_df_comp <- scored_df_comp[!is.na(scored_df_comp$comparison), ]
 
                 }, error = function(e) {
-                    cat("Error creating logged data matrix. Please ensure the control condition is valid.\n")
+                    cat("Error creating logged data matrix.\n")
                     print(e)
                     next
                 })
@@ -1717,6 +1813,10 @@ repeat {
                 ComplexHeatmap::draw(ht)
                 dev.off()
 
+                svg(get_heatmaps_path("log2", "combined", "sum_heatmap_auto_vd.svg"), width = 400/72, height = 900/72)
+                ComplexHeatmap::draw(ht)
+                dev.off()
+
                 png(get_heatmaps_path("z_score", "combined", "sum_heatmap_auto_z.png"), width = 400, height = 900)
 
                 ht <- heatmap_vd_z(
@@ -1724,6 +1824,10 @@ repeat {
                         plot_incl=c(1:(ncol(logged_df_comp)-1)),
                         kmeans_split=logged_df_comp$comparison, 
                         col=mako(100),legend_range=1,col_bias=1,lim1=NULL,lim2=NULL)
+                ComplexHeatmap::draw(ht)
+                dev.off()
+
+                svg(get_heatmaps_path("z_score", "combined", "sum_heatmap_auto_z.svg"), width = 400/72, height = 900/72)
                 ComplexHeatmap::draw(ht)
                 dev.off()
 
@@ -1788,6 +1892,8 @@ repeat {
                                     write.csv(upregulated_data_with_names, file = get_heatmaps_path(heatmap_scale, "up", sprintf("heatmap_upregulated_%s.csv", gsub(" ", "_", gr))), row.names = FALSE)
                                     upregulated_png_file <- get_heatmaps_path(heatmap_scale, "up", sprintf("heatmap_upregulated_%s.png", gsub(" ", "_", gr)))
                                     if (!is.null(heatmap_obj_up)) { png(upregulated_png_file, width = 900, height = 500); ComplexHeatmap::draw(heatmap_obj_up, heatmap_legend_side = "right"); dev.off() }
+                                    upregulated_svg_file <- get_heatmaps_path(heatmap_scale, "up", sprintf("heatmap_upregulated_%s.svg", gsub(" ", "_", gr)))
+                                    if (!is.null(heatmap_obj_up)) { svg(upregulated_svg_file, width = 900/72, height = 500/72); ComplexHeatmap::draw(heatmap_obj_up, heatmap_legend_side = "right"); dev.off() }
                                 }
                             }
                             if (length(downregulated_overlap) > 0) {
@@ -1798,6 +1904,8 @@ repeat {
                                     write.csv(downregulated_data_with_names, file = get_heatmaps_path(heatmap_scale, "down", sprintf("heatmap_downregulated_%s.csv", gsub(" ", "_", gr))), row.names = FALSE)
                                     downregulated_png_file <- get_heatmaps_path(heatmap_scale, "down", sprintf("heatmap_downregulated_%s.png", gsub(" ", "_", gr)))
                                     if (!is.null(heatmap_obj_down)) { png(downregulated_png_file, width = 900, height = 500); ComplexHeatmap::draw(heatmap_obj_down, heatmap_legend_side = "right"); dev.off() }
+                                    downregulated_svg_file <- get_heatmaps_path(heatmap_scale, "down", sprintf("heatmap_downregulated_%s.svg", gsub(" ", "_", gr)))
+                                    if (!is.null(heatmap_obj_down)) { svg(downregulated_svg_file, width = 900/72, height = 500/72); ComplexHeatmap::draw(heatmap_obj_down, heatmap_legend_side = "right"); dev.off() }
                                 }
                             }
                         }
@@ -1809,6 +1917,9 @@ repeat {
                             png(get_heatmaps_path(heatmap_scale, "up", "sum_upregulated_heatmap.png"), width = 1600, height = 2400)
                             if (!is.null(heatmap_obj_upregulated)) ComplexHeatmap::draw(heatmap_obj_upregulated, heatmap_legend_side = "right")
                             dev.off()
+                            svg(get_heatmaps_path(heatmap_scale, "up", "sum_upregulated_heatmap.svg"), width = 1600/72, height = 2400/72)
+                            if (!is.null(heatmap_obj_upregulated)) ComplexHeatmap::draw(heatmap_obj_upregulated, heatmap_legend_side = "right")
+                            dev.off()
                             write.csv(data.frame(Gene = rownames(combined_upregulated_data), combined_upregulated_data, check.names = FALSE), get_heatmaps_path(heatmap_scale, "up", "sum_upregulated_heatmap.csv"), row.names = FALSE)
                         }
                         if (length(downregulated_heatmaps) > 0) {
@@ -1817,6 +1928,9 @@ repeat {
                             row_split_downregulated <- factor(row_ann_down, levels = unique(row_ann_down))
                             heatmap_obj_downregulated <- if (heatmap_scale == "z_score") heatmap_z(combined_downregulated_data, plot_incl = seq_len(ncol(combined_downregulated_data)), row_split = row_split_downregulated, palette = heatmap_palette, sum_style = TRUE) else heatmap_v(combined_downregulated_data, plot_incl = seq_len(ncol(combined_downregulated_data)), row_split = row_split_downregulated, palette = heatmap_palette, sum_style = TRUE)
                             png(get_heatmaps_path(heatmap_scale, "down", "sum_downregulated_heatmap.png"), width = 1600, height = 2400)
+                            ComplexHeatmap::draw(heatmap_obj_downregulated, heatmap_legend_side = "right")
+                            dev.off()
+                            svg(get_heatmaps_path(heatmap_scale, "down", "sum_downregulated_heatmap.svg"), width = 1600/72, height = 2400/72)
                             ComplexHeatmap::draw(heatmap_obj_downregulated, heatmap_legend_side = "right")
                             dev.off()
                             write.csv(data.frame(Gene = rownames(combined_downregulated_data), combined_downregulated_data, check.names = FALSE), get_heatmaps_path(heatmap_scale, "down", "sum_downregulated_heatmap.csv"), row.names = FALSE)
@@ -1837,70 +1951,25 @@ repeat {
                     cat("No significant genes found for the given padj threshold. Returning to menu.\n")
                     next
                 }
-                # Split into upregulated and downregulated genes
-                degs_data_up <- subset(degs_data, log2FoldChange > 0)
-                degs_data_down <- subset(degs_data, log2FoldChange < 0)
-                # Generate indexed list of comparisons
+                # Build default Venn/UpSet sets (split up/down and combined) as in manual pipeline
                 comparisons <- unique(degs_data$comparison)
-                options_list <- list()
-                for (i in seq_along(comparisons)) {
-                    options_list[[paste0(i)]] <- comparisons[i]
-                    options_list[[paste0(i, "_up")]] <- paste0(comparisons[i], "_up")
-                    options_list[[paste0(i, "_down")]] <- paste0(comparisons[i], "_down")
+                selected_up <- list()
+                selected_down <- list()
+                selected_all <- list()
+                for (cmp in comparisons) {
+                    up_vec <- subset(degs_data, comparison == cmp & log2FoldChange > 0)$Gene
+                    down_vec <- subset(degs_data, comparison == cmp & log2FoldChange < 0)$Gene
+                    if (length(up_vec) > 0) selected_up[[paste0(cmp, "_up")]] <- unique(up_vec)
+                    if (length(down_vec) > 0) selected_down[[paste0(cmp, "_down")]] <- unique(down_vec)
+                    all_vec <- subset(degs_data, comparison == cmp)$Gene
+                    if (length(all_vec) > 0) selected_all[[cmp]] <- unique(all_vec)
                 }
-                venn_data <- list()
-                venn_data[["Upregulated"]] <- degs_data_up
-                venn_data[["Downregulated"]] <- degs_data_down
-                for (category in names(venn_data)) {
-                    category_data <- venn_data[[category]]
-                    if (nrow(category_data) == 0) {
-                        cat(sprintf("No genes in %s category. Skipping Venn diagrams for this category.\n", category))
-                        next
-                    }
-                    # Subset comparisons dynamically
-                    subset_genes <- split(category_data$Gene, category_data$comparison)
-                    # Add total gene counts to the category names
-                    category_names_with_counts <- sapply(names(subset_genes), function(name) {
-                        paste0(name, " (", length(subset_genes[[name]]), ")")
-                    })
-                    # Save under venn_upset/up/ or venn_upset/down/
-                    venn_subdir <- if (category == "Upregulated") "up" else "down"
-                    venn_filename <- get_venn_upset_path(paste0("default_venn_", category, ".png"), venn_subdir)
-                    table_filename <- get_venn_upset_path(paste0("default_venn_table_", category, ".csv"), venn_subdir)
-                    
-                    tryCatch({
-                        # Save the Venn diagram
-                        png(venn_filename, width = 600, height = 600)
-                        venn.plot <- venn.diagram(
-                            x = subset_genes,
-                            category.names = category_names_with_counts,
-                            # category.names = names(subset_genes),
-                            filename = NULL,
-                            lwd = 2,
-                            lty = 'blank',
-                            col = "transparent",
-                            fill = colorRampPalette(brewer.pal(8, "Pastel2"))(length(subset_genes)),
-                            # alpha = 0.5,
-                            cex = 1.5,
-                            fontface = "bold",
-                            fontfamily = "sans",
-                            cat.cex = 1,
-                            cat.default.pos = "outer",
-                            cat.fontface = "bold",
-                            cat.fontfamily = "sans",
-                            # rotation = 1,
-                            main = paste("Default Venn Diagram:", category),
-                            disable.logging = TRUE
-                        )
-                        grid.draw(venn.plot)
-                        dev.off()
-                        cat("Default Venn diagram saved as:", venn_filename, "\n")
-
-                        # Generate and export detailed gene table
-                        generate_gene_table(subset_genes, names(subset_genes), table_filename)
-                    }, error = function(e) {
-                        cat("Error generating default Venn diagram:", e$message, "\n")
-                    })
+                selected_up <- selected_up[sapply(selected_up, length) > 0]
+                selected_down <- selected_down[sapply(selected_down, length) > 0]
+                selected_all <- selected_all[sapply(selected_all, length) > 0]
+                export_venn_upset_split(selected_up, selected_down)
+                if (length(selected_all) >= 2) {
+                    export_venn_upset(selected_all, subdir = "combined")
                 }
 
                 # Generate trending plots
@@ -1951,9 +2020,9 @@ repeat {
                                 cat("Detected file input. Extracting genes from the first column...\n")
                                 if (grepl("\\.xlsx$", genes_input, ignore.case = TRUE)) {
                                     genes_df <- read_excel(genes_input, col_names = TRUE)
-                                } else if (grepl("\\.(txt|tsv)$", matrix_path, ignore.case = TRUE)) {
+                                } else if (grepl("\\.(txt|tsv)$", genes_input, ignore.case = TRUE)) {
                                     genes_df <- read.table(genes_input, header = TRUE, stringsAsFactors = FALSE, sep = "\t")
-                                } else if (grepl("\\.csv$", matrix_path, ignore.case = TRUE)) {
+                                } else if (grepl("\\.csv$", genes_input, ignore.case = TRUE)) {
                                     genes_df <- read.csv(genes_input, header = TRUE, stringsAsFactors = FALSE)
                                 } else {
                                     cat("Error: Unsupported file format. Please provide a .csv, .tsv, .txt, or .xlsx file.\n")
@@ -5675,9 +5744,9 @@ repeat {
                             if (grepl("\\.xlsx$", genes_input, ignore.case = TRUE)) {
                                 genes_df <- read_excel(genes_input, col_names = TRUE)
                                 # Ensure consistency with CSV reading
-                            } else if (grepl("\\.(txt|tsv)$", matrix_path, ignore.case = TRUE)) {
+                            } else if (grepl("\\.(txt|tsv)$", genes_input, ignore.case = TRUE)) {
                                 genes_df <- read.table(genes_input, header = TRUE, stringsAsFactors = FALSE, sep = "\t")
-                            } else if (grepl("\\.csv$", matrix_path, ignore.case = TRUE)) {
+                            } else if (grepl("\\.csv$", genes_input, ignore.case = TRUE)) {
                                 genes_df <- read.csv(genes_input, header = TRUE, stringsAsFactors = FALSE)
                             } else {
                                 cat("Error: Unsupported file format. Please provide a .csv, .tsv, .txt, or .xlsx file.\n")
