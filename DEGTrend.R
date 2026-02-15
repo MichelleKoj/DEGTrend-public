@@ -1147,14 +1147,15 @@ create_venn_diagram <- function(sets_named_list, set_names, circle_fills, highli
 }
 
 # Compute UpSet plot dimensions so bars and labels remain visible for many intersections.
+# Use generous inches per bar so bars are clearly visible (especially in split up/down plots).
 upset_plot_dimensions <- function(n_bars,
                                   min_width_in = 10,
                                   min_height_in = 6.5,
-                                  inches_per_bar = 0.4,
-                                  height_per_bar_in = 0.1,
-                                  max_width_in = 100,
-                                  max_height_in = 60) {
-  width_in <- max(min_width_in, 2 + n_bars * inches_per_bar)
+                                  inches_per_bar = 1.5,
+                                  height_per_bar_in = 0.35,
+                                  max_width_in = 300,
+                                  max_height_in = 150) {
+  width_in <- max(min_width_in, 3 + n_bars * inches_per_bar)
   height_in <- max(min_height_in, 5 + n_bars * height_per_bar_in)
   width_in <- min(width_in, max_width_in)
   height_in <- min(height_in, max_height_in)
@@ -1164,20 +1165,22 @@ upset_plot_dimensions <- function(n_bars,
 build_upset_ggplot <- function(counts_df, region_colors, x_lab, y_lab) {
   region_levels <- counts_df[["region"]]
   n_bars <- nrow(counts_df)
-  bottom_pt <- min(200, 45 + max(0, (n_bars - 15) * 2))
+  bottom_pt <- min(450, 90 + max(0, (n_bars - 15) * 4))
+  right_pt <- min(150, 45 + max(0, (n_bars - 10) * 3))
   ggplot2::ggplot(counts_df, ggplot2::aes(x = factor(region, levels = region_levels), y = count, fill = region)) +
-    ggplot2::geom_col(colour = "black", linewidth = 0.9) +
+    ggplot2::geom_col(colour = "black", linewidth = 0.9, width = 0.85) +
     ggplot2::scale_fill_manual(values = region_colors, guide = "none") +
     ggplot2::geom_text(ggplot2::aes(label = count), vjust = -0.5, size = 3.5) +
     ggplot2::scale_x_discrete(labels = counts_df[["label"]]) +
     ggplot2::scale_y_continuous(expand = ggplot2::expansion(mult = c(0, 0.15))) +
+    ggplot2::coord_cartesian(clip = "off") +
     ggplot2::theme_minimal() +
     ggplot2::theme(
       axis.text.x = ggplot2::element_text(size = 10, angle = 45, hjust = 1),
       axis.text.y = ggplot2::element_text(size = 10),
       axis.title.y = ggplot2::element_text(size = 11),
       axis.title.x = ggplot2::element_text(size = 11),
-      plot.margin = ggplot2::margin(55, 45, bottom_pt, 45)
+      plot.margin = ggplot2::margin(55, right_pt, bottom_pt, 45)
     ) +
     ggplot2::labs(x = x_lab, y = y_lab)
 }
