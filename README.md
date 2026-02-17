@@ -3,6 +3,9 @@
 **DEGTrend** (Differentially Expressed Genes Trending Analysis) is a program that helps you analyze gene expression data. You do **not** need to write code: you run the program, follow the menus, and provide your data files when asked.
 
 **Author:** Michelle Kojekine  
+Please feel free to contact me.
+Email: michelle.kojekine@mail.huji.ac.il.
+
 **Language:** R (version 4.4 or higher required)
 
 ---
@@ -338,3 +341,4 @@ Exact names may vary slightly; the program creates the folders it needs. You can
 7. Find your results in the output folder and its subfolders (results, heatmaps, venn_upset, trending, etc.).
 
 If you need to rerun an analysis, start DEGTrend again and point it to the same or a new output folder as you prefer.
+
