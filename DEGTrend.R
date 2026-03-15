@@ -862,7 +862,7 @@ get_trending_patterns <- function(n_conditions) {
 }
 
 plot_trending_ggplot <- function(condition_means, condition_names, title,
-                                 degs_data = NULL, comparisons = NULL, show_title = TRUE) {
+                                 degs_data = NULL, comparisons = NULL, show_title = FALSE) {
   if (length(condition_means) != length(condition_names) || length(condition_means) == 0L) {
     cat("Error: condition_means and condition_names must have same positive length\n")
     return(invisible(NULL))
@@ -939,20 +939,23 @@ plot_trending_ggplot <- function(condition_means, condition_names, title,
     ggplot2::geom_col(width = bar_width, colour = "black", linewidth = bar_stroke) +
     ggplot2::scale_fill_manual(values = fill_values, limits = condition_levels, guide = "none") +
     ggplot2::scale_x_discrete(expand = ggplot2::expansion(mult = c(0.12, 0.08))) +
-    ggplot2::scale_y_continuous(expand = c(0, 0)) +
-    ggplot2::coord_cartesian(ylim = c(0, y_max_plot), clip = "off") +
+    ggplot2::scale_y_continuous(
+        limits = c(0, y_max_plot),
+        expand = ggplot2::expansion(mult = c(0, 0.06))
+    ) +
+    ggplot2::coord_cartesian(clip = "off") +
     ggplot2::labs(title = if (show_title) title else NULL, y = "Normalized counts", x = NULL) +
     ggplot2::theme_classic() +
     ggplot2::theme(
-      plot.title       = ggplot2::element_text(size = 24, face = "bold", hjust = 0.5),
-      axis.title.y     = ggplot2::element_text(size = 18, face = "bold"),
-      axis.text.x      = ggplot2::element_text(size = 14, face = "bold", angle = 45, hjust = 1, vjust = 1),
-      axis.text.y      = ggplot2::element_text(size = 14, face = "bold"),
-      axis.line        = ggplot2::element_line(linewidth = 1.1),
-      axis.ticks       = ggplot2::element_line(linewidth = 1.1),
-      axis.ticks.length = grid::unit(8, "pt")
-    )
-
+        plot.title        = ggplot2::element_text(size = 24, face = "bold", hjust = 0.5),
+        axis.title.y      = ggplot2::element_text(size = 18, face = "bold"),
+        axis.text.x       = ggplot2::element_text(size = 14, face = "bold", angle = 45, hjust = 1, vjust = 1),
+        axis.text.y       = ggplot2::element_text(size = 14, face = "bold"),
+        axis.line         = ggplot2::element_line(linewidth = 1.1),
+        axis.ticks        = ggplot2::element_line(linewidth = 1.1),
+        axis.ticks.length = grid::unit(8, "pt"),
+        plot.margin       = ggplot2::margin(t = 15, r = 10, b = 10, l = 10)
+        )
   for (i in seq_along(segs_h)) {
     p <- p + ggplot2::geom_segment(
       data = segs_h[[i]],
@@ -1029,7 +1032,8 @@ generate_default_trending_plots <- function(counts_data, coldata, significant_ge
                 condition_names,
                 pattern_name,
                 degs_data = significant_genes,
-                comparisons = comparisons_all
+                comparisons = comparisons_all,
+                show_title = FALSE
             )
             if (is.null(p)) next
 
@@ -2722,28 +2726,6 @@ repeat {
                                     degs_data$comparison %in% comparison_list[other_idx] &
                                     degs_data$padj < padj_threshold
                                 ]))
-                                # other_genes <- unique(na.omit(unlist(
-                                #     lapply(selected_indices, function(idx) {
-                                #         if (grepl("_up$", idx)) {                     # keep direction
-                                #             degs_data$Gene[
-                                #                 degs_data$comparison %in% comparison_list[other_idx] &
-                                #                 degs_data$log2FoldChange > 0 &            # same sign only
-                                #                 degs_data$padj < padj_threshold
-                                #             ]
-                                #         } else if (grepl("_down$", idx)) {
-                                #             degs_data$Gene[
-                                #                 degs_data$comparison %in% comparison_list[other_idx] &
-                                #                 degs_data$log2FoldChange < 0 &            # same sign only
-                                #                 degs_data$padj < padj_threshold
-                                #             ]
-                                #         } else {                                      # no-direction set → keep any sign
-                                #             degs_data$Gene[
-                                #                 degs_data$comparison %in% comparison_list[other_idx] &
-                                #                 degs_data$padj < padj_threshold
-                                #             ]
-                                #         }
-                                #     })
-                                # )))
 
                                 intersected_genes <- setdiff(intersected_genes, other_genes)
                                 cat(sprintf("Unique genes after exclusion: %d\n", length(intersected_genes)))
@@ -2852,446 +2834,103 @@ repeat {
                 }
 
                 if (sub_menu_choice == 1) {
-                    # Ask the user if they have a count matrix or a folder of count files
-                    cat("Do you have a:\n")
-                    cat("[1] Count matrix\n")
-                    cat("[2] Folder of count files\n")
                     repeat {
-                        data_input_choice <- handle_quit(readline("Enter your choice (1 or 2): "))
-                        if (data_input_choice == "back") break
-                        data_input_choice <- as.numeric(data_input_choice)
-                        if (data_input_choice %in% c(1, 2)) break
-                        cat("Invalid choice. Please enter 1 or 2.\n")
-                    }
+                        cat("Please provide the path to the count matrix file (or type 'back' to return to the previous step): \n")
+                        matrix_path <- handle_quit(readline())
+                        if (matrix_path == "back") {
+                            cat("Returning to the data input choice.\n")
+                            # navigate_back <- TRUE
+                            break # Return to the data input choice
+                        }
 
-                    if (data_input_choice == "back") {
-                        cat("Returning to the previous step.\n")
-                        next # Return to the previous step
+                        if (file.exists(matrix_path)) {
+                            tryCatch({
+                                cat("Reading the count matrix...\n")
+                                if (grepl("\\.xlsx$", matrix_path, ignore.case = TRUE)) {
+                                    combined_data <- read_excel(matrix_path, col_names = TRUE)
+                                    # Ensure consistency with CSV reading
+                                    combined_data <- as.data.frame(combined_data, stringsAsFactors = FALSE)  # Convert to data.frame
+                                    colnames(combined_data) <- trimws(colnames(combined_data))               # Trim whitespace from headers
+                                    combined_data[] <- lapply(combined_data, function(x) {                   # Trim whitespace from data
+                                        if (is.character(x)) trimws(x) else x
+                                    })
+                                    combined_data[combined_data == ""] <- NA                                # Handle empty cells as NA
+                                } else if (grepl("\\.(txt|tsv)$", matrix_path, ignore.case = TRUE)) {
+                                    combined_data <- read.delim(matrix_path, header = TRUE, stringsAsFactors = FALSE, check.names = FALSE)
+                                } else if (grepl("\\.csv$", matrix_path, ignore.case = TRUE)) {
+                                    combined_data <- read.csv(matrix_path, header = TRUE, stringsAsFactors = FALSE, check.names = FALSE)
+                                } else {
+                                    cat("Error: Unsupported file format. Please provide a .csv, .tsv, .txt, or .xlsx file.\n")
+                                    next # Return to the start of the loop to retry
+                                }
+                                cat("Count matrix loaded successfully.\n")
+                                # navigate_back <- FALSE
+                                # break # Exit the loop if the matrix is loaded successfully
+                            }, error = function(e) {
+                                cat("Error reading the count matrix: ", e$message, "\n")
+                                next # Retry the input if there’s an error
+                            })
+                            break
+                        } else {
+                            cat("Invalid file path. Please try again.\n")
+                        }
                     }
-
-                    if (data_input_choice == 1) {
-                        # Initialize loop control variables
-                        # navigate_back <- FALSE
-                        # User has a count matrix
+                    
+                    repeat {
                         repeat {
-                            cat("Please provide the path to the count matrix file (or type 'back' to return to the previous step): \n")
-                            matrix_path <- handle_quit(readline())
-                            if (matrix_path == "back") {
-                                cat("Returning to the data input choice.\n")
-                                # navigate_back <- TRUE
-                                break # Return to the data input choice
+                            cat("Please provide the path to the sample info table (or type 'quit' to exit): \n")
+                            info_table_path <- handle_quit(readline())
+                            # Handle "back" command to return to the previous step
+                            if (info_table_path == "back") {
+                                cat("Returning to the sample info table choice.\n")
+                                final_conditions <- NULL
+                                break # Exit to return to the sample info table choice loop
                             }
 
-                            if (file.exists(matrix_path)) {
+                            if (file.exists(info_table_path)) {
                                 tryCatch({
-                                    cat("Reading the count matrix...\n")
-                                    if (grepl("\\.xlsx$", matrix_path, ignore.case = TRUE)) {
-                                        combined_data <- read_excel(matrix_path, col_names = TRUE)
-                                        # Ensure consistency with CSV reading
-                                        combined_data <- as.data.frame(combined_data, stringsAsFactors = FALSE)  # Convert to data.frame
-                                        colnames(combined_data) <- trimws(colnames(combined_data))               # Trim whitespace from headers
-                                        combined_data[] <- lapply(combined_data, function(x) {                   # Trim whitespace from data
-                                            if (is.character(x)) trimws(x) else x
-                                        })
-                                        combined_data[combined_data == ""] <- NA                                # Handle empty cells as NA
-                                    } else if (grepl("\\.(txt|tsv)$", matrix_path, ignore.case = TRUE)) {
-                                        combined_data <- read.delim(matrix_path, header = TRUE, stringsAsFactors = FALSE, check.names = FALSE)
-                                    } else if (grepl("\\.csv$", matrix_path, ignore.case = TRUE)) {
-                                        combined_data <- read.csv(matrix_path, header = TRUE, stringsAsFactors = FALSE, check.names = FALSE)
-                                    } else {
-                                        cat("Error: Unsupported file format. Please provide a .csv, .tsv, .txt, or .xlsx file.\n")
-                                        next # Return to the start of the loop to retry
+                                    # Function to read sample info table
+                                    read_sample_info <- function(file_path) {
+                                        if (grepl("\\.csv$", file_path, ignore.case = TRUE)) {
+                                            read.csv(file_path, header = TRUE, row.names = 1, stringsAsFactors = FALSE)
+                                        } else if (grepl("\\.(txt|tsv)$", file_path, ignore.case = TRUE)) {
+                                            read.delim(file_path, header = TRUE, row.names = 1, stringsAsFactors = FALSE, sep = "\t")
+                                        } else if (grepl("\\.xlsx$", file_path, ignore.case = TRUE)) {
+                                            read_excel(file_path, col_names = TRUE)
+                                        } else {
+                                            cat("Error: Unsupported file format. Please provide a .csv, .txt, .tsv, or .xlsx file.\n")
+                                            return(NULL)
+                                        }
                                     }
-                                    cat("Count matrix loaded successfully.\n")
-                                    # navigate_back <- FALSE
-                                    # break # Exit the loop if the matrix is loaded successfully
+
+                                    # Read the sample info table
+                                    sample_info <- read_sample_info(info_table_path)
+                                    if (is.null(sample_info)) next # Retry if unsupported format
+
+                                    # Debugging: Print parsed sample info table
+                                    cat("Sample info table loaded successfully:\n")
+                                    print(sample_info)
+
+                                    # Exit the loop on successful read
+                                    break
                                 }, error = function(e) {
-                                    cat("Error reading the count matrix: ", e$message, "\n")
-                                    next # Retry the input if there’s an error
+                                    cat("Error reading the sample info table: ", e$message, "\n")
+                                    next # Retry on error
                                 })
-                                break
                             } else {
                                 cat("Invalid file path. Please try again.\n")
                             }
                         }
-                        
-                        # if (navigate_back) break # # Return to main menu if "back" was selected
-                        # Ask if there is a sample info table
-                        repeat {
-                            cat("Do you have a sample info table? (y/n, or type 'back' to return to the matrix input, 'quit' to exit): \n")
-                            info_table_choice <- handle_quit(readline())
-                            # Handle "back" command to return to the matrix input step
-                            if (info_table_choice == "back") {
-                                cat("Returning to the matrix input step.\n")
-                                # Reset variables to ensure clean navigation
-                                combined_data <- NULL
-                                final_conditions <- NULL
-                                # navigate_back <- TRUE
-                                break # Exit to return to the matrix input loop. TOFIX: breaks to the main menu
-                            }
-                            if (tolower(info_table_choice) == "y") {
-                                repeat {
-                                    cat("Please provide the path to the sample info table (or type 'quit' to exit): \n")
-                                    info_table_path <- handle_quit(readline())
-                                    # Handle "back" command to return to the previous step
-                                    if (info_table_path == "back") {
-                                        cat("Returning to the sample info table choice.\n")
-                                        final_conditions <- NULL
-                                        break # Exit to return to the sample info table choice loop
-                                    }
+                        # # Align sample info with count matrix
+                        tryCatch({
+                            # Align sample info with count matrix
+                            coldata <- sample_info
+                            # Align with the count matrix columns except the first which is assumed to be geneID
+                            coldata <- coldata[match(colnames(combined_data)[-1], rownames(coldata)), , drop = FALSE]
 
-                                    if (file.exists(info_table_path)) {
-                                        tryCatch({
-                                            # Function to read sample info table
-                                            read_sample_info <- function(file_path) {
-                                                if (grepl("\\.csv$", file_path, ignore.case = TRUE)) {
-                                                    read.csv(file_path, header = TRUE, row.names = 1, stringsAsFactors = FALSE)
-                                                } else if (grepl("\\.(txt|tsv)$", file_path, ignore.case = TRUE)) {
-                                                    read.delim(file_path, header = TRUE, row.names = 1, stringsAsFactors = FALSE, sep = "\t")
-                                                } else if (grepl("\\.xlsx$", file_path, ignore.case = TRUE)) {
-                                                    read_excel(file_path, col_names = TRUE)
-                                                } else {
-                                                    cat("Error: Unsupported file format. Please provide a .csv, .txt, .tsv, or .xlsx file.\n")
-                                                    return(NULL)
-                                                }
-                                            }
-
-                                            # Read the sample info table
-                                            sample_info <- read_sample_info(info_table_path)
-                                            if (is.null(sample_info)) next # Retry if unsupported format
-
-                                            # Debugging: Print parsed sample info table
-                                            cat("Sample info table loaded successfully:\n")
-                                            print(sample_info)
-
-                                            # Exit the loop on successful read
-                                            break
-                                        }, error = function(e) {
-                                            cat("Error reading the sample info table: ", e$message, "\n")
-                                            next # Retry on error
-                                        })
-                                    } else {
-                                        cat("Invalid file path. Please try again.\n")
-                                    }
-                                }
-                                # # Align sample info with count matrix
-                                tryCatch({
-                                    # Align sample info with count matrix
-                                    coldata <- sample_info
-                                    # Align with the count matrix columns except the first which is assumed to be geneID
-                                    coldata <- coldata[match(colnames(combined_data)[-1], rownames(coldata)), , drop = FALSE]
-
-                                    if (any(is.na(coldata))) {
-                                        cat("Error: Mismatch between sample info and count matrix. Please ensure sample names align.\n")
-                                        next # Retry alignment
-                                    }
-
-                                    # Assign conditions from the sample info table
-                                    conditions_list <- list()
-                                    for (i in seq_len(ncol(coldata))) {
-                                        conditions_list[[paste0("Condition", i)]] <- coldata[, i]
-                                    }
-
-                                    # Combine sample names and all conditions into a final dataframe
-                                    final_conditions <- data.frame(
-                                        Sample = colnames(combined_data)[-1],
-                                        conditions_list,
-                                        stringsAsFactors = FALSE
-                                    )
-
-                                    colnames(combined_data)[-1] <- final_conditions$Sample  # Update column names
-                                    rownames(combined_data) <- combined_data$geneID
-                                    combined_data$geneID <- NULL
-
-                                    # Debugging: Print the final data structure
-                                    cat("\nFinal preview of assigned conditions:\n")
-                                    print(final_conditions)
-
-                                    cat("\nFinal head of data structure with the assigned conditions:\n")
-                                    print(head(combined_data))
-                                    # navigate_back <- FALSE
-                                    break # Success, exit loop        
-                                }, error = function(e) {
-                                    cat("Error aligning sample info with count matrix: ", e$message, "\n")
-                                    next # Retry alignment
-                                })
-                            } else if (tolower(info_table_choice) == "n") {
-                                cat("\nNo sample info table provided. Extracting sample names from the matrix.\n")
-                                tryCatch({
-                                    # Extract sample names from the count matrix
-                                    repeat {
-                                        extracted_sample_names <- colnames(combined_data)[-1]  # Assuming the first column is geneID
-                                        cat("Extracted sample names:\n")
-                                        print(extracted_sample_names)
-                                        
-                                        # Validate extracted names with the user
-                                        repeat {
-                                            cat("\nAre these sample names correct? (y/n): ")
-                                            validation_response <- handle_quit(readline())
-
-                                            if (validation_response == "back") {
-                                                cat("Returning to the matrix input step.\n")
-                                                break # Exit to return to the previous step
-                                            }
-                                            
-                                            if (tolower(validation_response) == "y") {
-                                                break
-                                            } else if (tolower(validation_response) == "n") {
-                                                cat("\nPlease provide the correct sample names. Enter the names separated by commas:\n")
-                                                new_sample_names <- handle_quit(readline())
-
-                                                if (new_sample_names == "back") {
-                                                cat("Returning to extracted sample names validation.\n")
-                                                next # Retry sample name validation
-                                                }                                    
-                                                
-                                                extracted_sample_names <- unlist(strsplit(new_sample_names, ","))
-                                                
-                                                # Validate length of new sample names
-                                                if (length(extracted_sample_names) == ncol(combined_data) - 1) {
-                                                    colnames(combined_data)[-1] <- extracted_sample_names
-                                                    break
-                                                } else {
-                                                    cat("The number of sample names does not match the number of columns in the count matrix. Please try again.\n")
-                                                }
-                                            } else {
-                                                cat("Invalid input. Please enter 'y' or 'n'.\n")
-                                            }
-                                        }
-                                        break # Exit sample name extraction loop if valid names are confirmed
-                                    }
-
-                                    # Assign conditions
-                                    assign_conditions <- function(sample_names) {
-                                        conditions <- list()  # List to store multiple conditions
-                                        condition_index <- 1  # Counter for condition number
-                                        
-                                        repeat {
-                                        cat(paste("\nAssigning Condition", condition_index, "...\n"))
-                                        condition_values <- vector("character", length(sample_names))  # Initialize condition values
-                                        
-                                        cat("Please assign a condition value for each sample:\n")
-                                        for (i in seq_along(sample_names)) {
-                                            cat(sprintf("[%d] %s: ", i, sample_names[i]))
-                                            condition_values[i] <- handle_quit(readline())
-                                        }
-                                        
-                                        # Validation Step
-                                        repeat {
-                                            cat("\nCondition assignment preview:\n")
-                                            preview <- data.frame(Sample = sample_names, Condition = condition_values, stringsAsFactors = FALSE)
-                                            print(preview)
-                                            
-                                            cat("\nAre these conditions correct? (y/n): ")
-                                            validation_response <- handle_quit(readline())
-                                            if (tolower(validation_response) == "y") {
-                                                break
-                                            } else if (tolower(validation_response) == "n") {
-                                                cat("Please reassign the conditions.\n")
-                                                for (i in seq_along(sample_names)) {
-                                                    cat(sprintf("[%d] %s: ", i, sample_names[i]))
-                                                    condition_values[i] <- handle_quit(readline())
-                                                }
-                                            } else {
-                                                cat("Invalid input. Please enter 'y' or 'n'.\n")
-                                            }
-                                        }
-                                        
-                                        # Add the new condition to the conditions list
-                                        conditions[[paste0("Condition", condition_index)]] <- condition_values
-                                        
-                                        cat("\nPreview of assigned conditions:\n")
-                                        preview <- data.frame(Sample = sample_names, conditions, stringsAsFactors = FALSE)
-                                        print(preview)
-                                        
-                                        # Ask if more conditions need to be defined
-                                        cat("\nDo you want to define another condition? (y/n): ")
-                                        user_response <- handle_quit(readline())
-                                        if (tolower(user_response) == "n") {
-                                            break
-                                        }
-                                        
-                                        # Increment condition index
-                                        condition_index <- condition_index + 1
-                                        }
-                                        
-                                        return(conditions)
-                                    }
-
-                                    # Assign conditions
-                                    conditions_list <- assign_conditions(extracted_sample_names)
-                                    
-                                    # Combine sample names and all conditions into a final dataframe
-                                    final_conditions <- data.frame(
-                                        Sample = extracted_sample_names,
-                                        conditions_list,
-                                        stringsAsFactors = FALSE
-                                    )
-                                    
-                                    cat("\nFinal preview of assigned conditions:\n")
-                                    print(final_conditions)
-
-                                    # Align with the combined_data structure
-                                    colnames(combined_data)[-1] <- extracted_sample_names  # Update column names
-                                    rownames(combined_data) <- combined_data$geneID
-                                    combined_data$geneID <- NULL
-
-                                    # Debugging: Preview final structure
-                                    cat("\nFinal head of data structure with the assigned conditions:\n")
-                                    print(head(combined_data))
-                                    cat(sprintf("\nNumber of genes before filtering: %d\n", nrow(combined_data)))
-                                    # break # Exit the loop after successful extraction
-                                }, error = function(e) {
-                                    cat("An error occurred while processing the sample names or conditions: ", e$message, "\n")
-                                    cat("Retrying the step...\n")
-                                    next # Retry the whole process
-                                })
-                                # navigate_back <- FALSE
-                                # break
-                            } else {
-                                cat("Invalid input. Please enter 'y' or 'n'.\n")
-                                next
-                            }
-                        } 
-                        # if (navigate_back) next # Return to the count matrix input loop
-                        # break
-                    } else if (data_input_choice == 2) {
-                        # User has a folder of count files
-                        # 1. Ask for the folder path
-                        repeat {
-                            cat("Please insert the folder path (or type 'back' to return to the previous step): \n")
-                            folder_path <- handle_quit(readline())
-                            
-                            if (folder_path == "back") {
-                                cat("Returning to the data input choice.\n")
-                                break # Return to the data input choice
-                            }
-
-                            if (dir.exists(folder_path)) {
-                                setwd(folder_path)
-                                break
-                            } else {
-                                cat("Invalid folder path. Please try again.\n")
-                            }
-                        }
-
-                        # 2. Check for optional sample info table
-                        cat("Do you have a sample info table? (y/n, or type 'quit' to exit): \n")
-                        info_table_choice <- handle_quit(readline())
-                        if (tolower(info_table_choice) == "y") {
-                            repeat {
-                                cat("Please provide the path to the sample info table (or type 'quit' to exit): \n")
-                                info_table_path <- handle_quit(readline())
-                                # Handle "back" command to return to the previous step
-                                if (info_table_path == "back") {
-                                    cat("Returning to the sample info table choice.\n")
-                                    final_conditions <- NULL
-                                    break # Exit to return to the sample info table choice loop
-                                }
-
-                                if (file.exists(info_table_path)) {
-                                    tryCatch({
-                                        # Function to read sample info table
-                                        read_sample_info <- function(file_path) {
-                                            if (grepl("\\.csv$", file_path, ignore.case = TRUE)) {
-                                                read.csv(file_path, header = TRUE, row.names = 1, stringsAsFactors = FALSE)
-                                            } else if (grepl("\\.(txt|tsv)$", file_path, ignore.case = TRUE)) {
-                                                read.delim(file_path, header = TRUE, row.names = 1, stringsAsFactors = FALSE, sep = "\t", fileEncoding = "UTF-8")
-                                            } else if (grepl("\\.xlsx$", file_path, ignore.case = TRUE)) {
-                                                read_excel(file_path, col_names = TRUE)
-                                            } else {
-                                                cat("Error: Unsupported file format. Please provide a .csv, .txt, .tsv, or .xlsx file.\n")
-                                                return(NULL)
-                                            }
-                                        }
-
-                                        # Read the sample info table
-                                        sample_info <- read_sample_info(info_table_path)
-                                        if (is.null(sample_info)) next # Retry if unsupported format
-
-                                        # Debugging: Print parsed sample info table
-                                        cat("Sample info table loaded successfully:\n")
-                                        print(sample_info)
-
-                                        # Exit the loop on successful read
-                                        break
-                                    }, error = function(e) {
-                                        cat("Error reading the sample info table: ", e$message, "\n")
-                                        next # Retry on error
-                                    })
-                                } else {
-                                    cat("Invalid file path. Please try again.\n")
-                                }
-                            }
-                            # Extract count file names from the last column
-                            count_files <- sample_info[, ncol(sample_info)]
-
-                            # Debugging: Print extracted file paths
-                            cat("Debugging Info: Extracted file paths from the sample info table:\n")
-                            print(count_files)
-
-                            # Check for missing or invalid file paths
-                            if (any(is.na(count_files) | count_files == "")) {
-                                cat("Error: Some file paths in the sample info table are missing or invalid.")
-                                next
-                            }
-
-                            # Concatenate folder path with filenames
-                            # count_files <- file.path(folder_path, count_files)
-                            count_files <- normalizePath(sample_info$path, winslash = "/", mustWork = FALSE)
-
-
-                            # Validate that the count files exist
-                            if (!all(file.exists(count_files))) {
-                                missing_files <- count_files[!file.exists(count_files)]
-                                cat("The following count files from the sample info table are missing: ", paste(missing_files, collapse = ", "))
-                                next
-                            }
-
-                            # Use all other columns (excluding the last column) as metadata for coldata
-                            coldata <- sample_info[, -ncol(sample_info), drop = FALSE]
-                            colnames(coldata) <- make.names(colnames(coldata))  # Ensure column names are valid
-
-                            cat("Sample info table loaded successfully. Using the following coldata:\n")
-                            print(coldata)
-
-                            # Read and process count files (supports .txt, .tsv, .csv, .xlsx)
-                            cat("Reading gene count data...\n")
-                            tryCatch({
-                                read_one_count_file <- function(file) {
-                                    if (grepl("\\.xlsx$", file, ignore.case = TRUE)) {
-                                        data <- read_excel(file, col_names = FALSE)
-                                    } else if (grepl("\\.csv$", file, ignore.case = TRUE)) {
-                                        data <- read.csv(file, header = FALSE, stringsAsFactors = FALSE)
-                                    } else {
-                                        data <- read.delim(file, header = FALSE, stringsAsFactors = FALSE)
-                                    }
-                                    colnames(data) <- c("geneID", paste0("Sample_", seq_len(ncol(data) - 1)))
-                                    return(data)
-                                }
-                                Genes <- lapply(count_files, read_one_count_file)
-                            }, error = function(e) {
-                                cat("Error reading files. Please ensure they are properly formatted:", e$message, "\n")
-                                next
-                            })
-
-                            # Combine data into a single matrix
-                            combined_data <- Reduce(function(x, y) merge(x, y, by = "geneID", all = TRUE), Genes)
-                            # Rename columns based on sample info table
-                            colnames(combined_data)[-1] <- rownames(sample_info)  # Use sample names from the sample info table
-                            cat("Gene count matrix created successfully.\n")
-
-                            # # save the combined data to a file
-                            # combined_data_filename <- get_output_path("combined_data.csv")
-                            # write.csv(combined_data, combined_data_filename, row.names = FALSE)
-
-                            cat("The col names of the combined data are: ") #DEBUG
-                            print(colnames(combined_data)[-1])
-
-                            # Validate that the sample names match the coldata
-                            if (!all(colnames(combined_data)[-1] %in% rownames(coldata))) {
-                                cat("Mismatch between sample names in the count files and the provided sample info table. Please correct the sample info table or paths.\n")
-                                next
+                            if (any(is.na(coldata))) {
+                                cat("Error: Mismatch between sample info and count matrix. Please ensure sample names align.\n")
+                                next # Retry alignment
                             }
 
                             # Assign conditions from the sample info table
@@ -3306,388 +2945,25 @@ repeat {
                                 conditions_list,
                                 stringsAsFactors = FALSE
                             )
-                            sample_names <- colnames(combined_data)[-1]
-                            cat("\nThe sample names are: ") #DEBUG
-                            print(sample_names)
 
+                            colnames(combined_data)[-1] <- final_conditions$Sample  # Update column names
+                            rownames(combined_data) <- combined_data$geneID
+                            combined_data$geneID <- NULL
+
+                            # Debugging: Print the final data structure
                             cat("\nFinal preview of assigned conditions:\n")
                             print(final_conditions)
 
-                            # Preview the final data structure
-                            cat("\nThe head of data structure with the assigned conditions:\n")
+                            cat("\nFinal head of data structure with the assigned conditions:\n")
                             print(head(combined_data))
-                            write.csv(combined_data, get_output_path("combined_data.csv"), row.names = TRUE)
-                            cat("Combined data saved as 'combined_data.csv'\n")
-                        } else {
-                            # 2. Read the files into a list (supports txt, csv, tsv, xlsx)
-                            cfiles <- list.files(folder_path, pattern = "\\.(txt|csv|tsv|xlsx)$", full.names = TRUE)
-                            if (length(cfiles) == 0) {
-                                cat("No valid files found in the specified folder. Please check the folder and try again.\n")
-                                next
-                            }
-
-                            # Normalize file paths to use `/` consistently
-                            cfiles <- gsub("\\\\", "/", cfiles)
-                            sample_names <- sub("\\.(txt|csv|tsv|xlsx)$", "", basename(cfiles), ignore.case = TRUE)
-
-                            # Read a single count file by extension (supports .txt, .tsv, .csv, .xlsx)
-                            read_count_file <- function(file) {
-                                if (grepl("\\.xlsx$", file, ignore.case = TRUE)) {
-                                    read_excel(file, col_names = FALSE)
-                                } else if (grepl("\\.csv$", file, ignore.case = TRUE)) {
-                                    read.csv(file, header = FALSE, stringsAsFactors = FALSE)
-                                } else {
-                                    read.delim(file, header = FALSE, stringsAsFactors = FALSE)
-                                }
-                            }
-
-                            # Validate the structure of input files
-                            validate_file_format <- function(file) {
-                                tryCatch({
-                                    data <- read_count_file(file)
-                                    if (ncol(data) < 2) return(FALSE)
-                                    return(TRUE)
-                                }, error = function(e) {
-                                    cat("Error in file:", file, "-", e$message, "\n")
-                                    return(FALSE)
-                                })
-                            }
-
-                            # Filter valid files
-                            valid_files <- sapply(cfiles, validate_file_format)
-                            cfiles <- cfiles[valid_files]
-                            sample_names <- sample_names[valid_files]
-
-                            if (length(cfiles) == 0) {
-                                cat("No valid input files found. Please ensure files are correctly formatted and try again.\n")
-                                next
-                            }
-
-                            cat("Loaded valid files:\n")
-                            print(cfiles)
-
-                            # 3. Read and process files
-                            cat("Reading gene count data...\n")
-                            tryCatch({
-                                # Genes <- lapply(cfiles, function(file) {
-                                #     data <- if (grepl("\\.xlsx$", file)) {
-                                #         read_excel(file, col_names = FALSE)
-                                #     } else {
-                                #         read.delim(file, header = FALSE)
-                                #     }
-                                #     # colnames(data) <- c("geneID", paste0("Sample_", seq_len(ncol(data) - 1)))
-                                #     return(data)
-                                ## TODO: Check if this works:
-                                gene_list <- lapply(seq_along(cfiles), function(i) {
-                                file <- cfiles[i]
-                                sample_name <- sample_names[i]
-                                data <- read_count_file(file)
-                                colnames(data) <- c("geneID", sample_name)
-                                return(data)
-                                })
-                            }, error = function(e) {
-                                cat("Error reading files. Please ensure they are properly formatted:", e$message, "\n")
-                                next
-                            })
-
-                            # Combine data into a single matrix
-                            # combined_data <- Reduce(function(x, y) merge(x, y, by = "geneID", all = TRUE), Genes)
-                            combined_data <- Reduce(function(x, y) merge(x, y, by = "geneID", all = TRUE), gene_list)## TODO: Check if this works:
-                            cat("Gene count matrix created successfully.\n")
-
-                            # 4. Extract sample information
-                            cat("Please insert from where to where to read the file name for relevant information (or type 'quit' to exit):\n")
-
-                            repeat {
-                                cat("From (leave empty for no delimiter): ")
-                                from <- handle_quit(readline())
-                                cat("To (leave empty for no delimiter): ")
-                                to <- handle_quit(readline())
-
-                                # Escape special characters in delimiters
-                                from <- ifelse(from != "", gsub("([][\\^$.|?*+(){}])", "\\\\\\1", from), "")
-                                to <- ifelse(to != "", gsub("([][\\^$.|?*+(){}])", "\\\\\\1", to), "")
-
-                                # Extract file parts based on delimiters
-                                tryCatch({
-                                    dat.names <- basename(cfiles)  # Default to file names
-                                    if (from != "") {
-                                        dat.names <- sub(from, "", dat.names)
-                                    }
-                                    if (to != "") {
-                                        dat.names <- sub(to, "", dat.names)
-                                    }
-                                    if (length(dat.names) > 0) {
-                                        break
-                                    } else {
-                                        cat("No matches found for the specified delimiters. Please try again.\n")
-                                    }
-                                }, error = function(e) {
-                                    cat("Error during processing: ", e$message, "\nPlease try again.\n")
-                                })
-                            }
-
-                            cat("Extracted file parts:\n")
-                            print(dat.names)
-
-                            # Function to generate combinations from file names
-                            generate_combinations <- function(name) {
-                                delimiters <- "[/_\\.-]+"  # Matches '/', '_', '\', '.' or '-'
-                                parts <- unlist(strsplit(name, delimiters))
-                                unlist(lapply(seq_along(parts), function(i) {
-                                    sapply(seq(i, length(parts)), function(j) {
-                                        paste(parts[i:j], collapse = "_")
-                                    })
-                                }))
-                            }
-
-                            # 5. Extract sample names
-                            extract_sample_names <- function(dat.names) {
-                                remaining_files <- dat.names
-                                selected_samples <- vector("character", length(dat.names))  # Preallocate with default empty
-                                names(selected_samples) <- dat.names  # Map files to names
-
-                                repeat {
-                                    if (length(remaining_files) == 0) {
-                                        cat("\nAll sample names have been defined.\n")
-                                        break
-                                    }
-                                    
-                                    file <- remaining_files[1]
-                                    cat("\nProcessing file:", file, "\n")
-                                    
-                                    # Generate all possible combinations for this file
-                                    sample_combinations <- generate_combinations(file)
-                                    names(sample_combinations) <- seq_along(sample_combinations)  # Add indices for clarity
-
-                                    # Display all combinations
-                                    cat("Select the part of the file that represents the sample name:\n")
-                                    for (i in seq_along(sample_combinations)) {
-                                        cat(sprintf("[%d] %s\n", i, sample_combinations[i]))
-                                    }
-                                    cat("[manual] Enter manually\n[done] Finish selection\n[quit] Exit program\n")
-
-                                    # User input for selection
-                                    user_input <- handle_quit(readline("Enter the index for sample names (or 'manual', 'done', 'quit'): "))
-                                    
-                                    if (tolower(user_input) == "done") {
-                                        break
-                                    }
-                                    if (tolower(user_input) == "manual") {
-                                        # Allow manual entry
-                                        manual_name <- handle_quit(readline("Enter the sample name manually: "))
-                                        selected_samples[file] <- manual_name
-                                        remaining_files <- remaining_files[-1]  # Remove the current file
-                                        next
-                                    }
-
-                                    # Handle index-based selection
-                                    selected_index <- as.integer(user_input)
-                                    if (!is.na(selected_index) && selected_index > 0 && selected_index <= length(sample_combinations)) {
-                                        selected_sample <- sample_combinations[selected_index]
-                                        selected_samples[file] <- selected_sample
-
-                                        # Remove files that match this selection
-                                        remaining_files <- remaining_files[!sapply(remaining_files, function(name) {
-                                            selected_parts <- unlist(strsplit(selected_sample, "_"))
-                                            parts <- generate_combinations(name)
-                                            any(selected_parts %in% parts)
-                                        })]
-
-                                        cat("\nPreview of selected sample names:\n")
-                                        print(selected_samples[!selected_samples == ""])
-                                    } else {
-                                        cat("Invalid input. Please enter a valid index, 'manual', 'done', or 'quit'.\n")
-                                    }
-                                }
-
-                                # Handle unassigned files
-                                unassigned_files <- names(selected_samples)[selected_samples == ""]
-                                if (length(unassigned_files) > 0) {
-                                    cat("\nSome files were not assigned sample names. Define names for these files:\n")
-                                    for (file in unassigned_files) {
-                                        cat("\nProcessing unassigned file:", file, "\n")
-                                        sample_combinations <- generate_combinations(file)
-                                        names(sample_combinations) <- seq_along(sample_combinations)
-
-                                        # Display all combinations for the unassigned file
-                                        cat("Select the part of the file that represents the sample name:\n")
-                                        for (i in seq_along(sample_combinations)) {
-                                            cat(sprintf("[%d] %s\n", i, sample_combinations[i]))
-                                        }
-                                        cat("[manual] Enter manually\n[skip] Skip this file\n")
-
-                                        # Get user input for the unassigned file
-                                        user_input <- handle_quit(readline("Enter the index for sample names (or 'manual', 'skip'): "))
-                                        if (tolower(user_input) == "manual") {
-                                            manual_name <- handle_quit(readline("Enter the sample name manually: "))
-                                            selected_samples[file] <- manual_name
-                                        } else if (tolower(user_input) == "skip") {
-                                            selected_samples[file] <- "unassigned"
-                                        } else {
-                                            selected_index <- as.integer(user_input)
-                                            if (!is.na(selected_index) && selected_index > 0 && selected_index <= length(sample_combinations)) {
-                                                selected_samples[file] <- sample_combinations[selected_index]
-                                            } else {
-                                                cat("Invalid input. Skipping this file.\n")
-                                                selected_samples[file] <- "unassigned"
-                                            }
-                                        }
-                                    }
-                                }
-                                
-                                return(selected_samples)
-                            }
-
-                            # Apply the function to extract sample names
-                            sample_names <- extract_sample_names(dat.names)
-
-                            cat("\nFinal list of extracted sample names:\n")
-                            print(sample_names)
-
-                            # 6. Condition Assignment
-                            assign_conditions <- function(dat.names, samples) {
-                                conditions <- list()  # List to store multiple conditions
-                                condition_index <- 1  # Counter for condition number
-
-                                repeat {
-                                    cat(paste("\nAssigning Condition", condition_index, "...\n"))
-                                    condition_values <- rep(NA, length(dat.names))  # Initialize condition values
-                                    remaining_files <- dat.names[is.na(condition_values)]  # Only process files without current condition
-
-                                    while (length(remaining_files) > 0) {
-                                        file <- remaining_files[1]
-                                        cat("\nProcessing file:", file, "\n")
-
-                                        # Generate possible combinations
-                                        sample_combinations <- generate_combinations(file)
-                                        names(sample_combinations) <- seq_along(sample_combinations)
-
-                                        # Display options
-                                        cat("Select the part of the file that represents Condition", condition_index, ":\n")
-                                        for (i in seq_along(sample_combinations)) {
-                                            cat(sprintf("[%d] %s\n", i, sample_combinations[i]))
-                                        }
-                                        cat("[manual] Enter manually\n[skip] Skip this file\n[done] Finish assignment\n[quit] Exit program\n")
-
-                                        user_input <- handle_quit(readline("Enter the index for Condition (or 'manual', 'skip', 'done', 'quit'): "))
-
-                                        if (tolower(user_input) == "done") {
-                                            break
-                                        }
-                                        if (tolower(user_input) == "manual") {
-                                            manual_condition <- handle_quit(readline("Enter the condition manually: "))
-                                            condition_values[dat.names == file] <- manual_condition
-                                            remaining_files <- remaining_files[-1]
-                                            next
-                                        }
-                                        if (tolower(user_input) == "skip") {
-                                            remaining_files <- remaining_files[-1]
-                                            next
-                                        }
-
-                                        selected_index <- as.integer(user_input)
-                                        if (!is.na(selected_index) && selected_index > 0 && selected_index <= length(sample_combinations)) {
-                                            selected_condition <- sample_combinations[selected_index]
-                                            matched_files <- sapply(dat.names, function(name) {
-                                                parts <- generate_combinations(name)
-                                                any(selected_condition %in% parts)
-                                            })
-
-                                            # Assign selected condition to matching files
-                                            condition_values[matched_files & is.na(condition_values)] <- selected_condition
-
-                                            # Preview currently assigned conditions
-                                            cat("\nPreview of assigned conditions:\n")
-                                            preview <- data.frame(Sample = dat.names, Condition = condition_values, stringsAsFactors = FALSE)
-                                            print(preview[!is.na(preview$Condition), ])
-
-                                            # Remove matched files from the remaining list
-                                            remaining_files <- remaining_files[is.na(condition_values)]
-                                        } else {
-                                            cat("Invalid input. Please select a valid index, 'manual', 'skip', or 'done'.\n")
-                                        }
-                                    }
-
-                                    # Validation Step: Review and make corrections
-                                    cat("\nValidation: Review assigned conditions for Condition", condition_index, ":\n")
-                                    preview <- data.frame(Sample = dat.names, Condition = condition_values, stringsAsFactors = FALSE)
-                                    print(preview)
-
-                                    repeat {
-                                        cat("\nDo you want to make any changes to the assigned conditions? (y/n): ")
-                                        validation_response <- handle_quit(readline())
-                                        if (tolower(validation_response) == "y") {
-                                            cat("\nSelect a sample to modify (enter the row number or 'done' to finish):\n")
-                                            for (i in seq_along(dat.names)) {
-                                                cat(sprintf("[%d] %s -> %s\n", i, dat.names[i], condition_values[i]))
-                                            }
-
-                                            modify_input <- handle_quit(readline("Enter the row number to modify (or 'done'): "))
-                                            if (tolower(modify_input) == "done") {
-                                                break
-                                            }
-                                            row_index <- as.integer(modify_input)
-                                            if (!is.na(row_index) && row_index > 0 && row_index <= length(dat.names)) {
-                                                cat("\nCurrent condition for sample:", dat.names[row_index], "is", condition_values[row_index])
-                                                new_condition <- handle_quit(readline("\nEnter the new condition value: "))
-                                                condition_values[row_index] <- new_condition
-                                                cat("\nCondition updated. Preview of assigned conditions:\n")
-                                                preview <- data.frame(Sample = dat.names, Condition = condition_values, stringsAsFactors = FALSE)
-                                                print(preview)
-                                            } else {
-                                                cat("Invalid row number. Please select a valid sample.\n")
-                                            }
-                                        } else if (tolower(validation_response) == "n") {
-                                            break
-                                        } else {
-                                            cat("Invalid input. Please enter 'y' or 'n'.\n")
-                                        }
-                                    }
-
-                                    # Add the new condition to the conditions list
-                                    conditions[[paste0("Condition", condition_index)]] <- condition_values
-
-                                    cat("\nPreview of assigned conditions:\n")
-                                    preview <- data.frame(Sample = dat.names, conditions, stringsAsFactors = FALSE)
-                                    print(preview)
-
-                                    # Ask if more conditions need to be defined
-                                    cat("\nDo you want to define another condition? (y/n): ")
-                                    user_response <- handle_quit(readline())
-                                    if (tolower(user_response) == "n") {
-                                        break
-                                    }
-
-                                    # Increment condition index
-                                    condition_index <- condition_index + 1
-                                }
-
-                                return(conditions)
-                            }
-
-                            # Call the function to assign multiple conditions
-                            conditions_list <- assign_conditions(dat.names, sample_names)
-
-                            # Combine sample names and all conditions into a final dataframe
-                            final_conditions <- data.frame(
-                                Sample = dat.names,
-                                conditions_list,
-                                stringsAsFactors = FALSE
-                            )
-
-                            cat("\nFinal preview of assigned conditions:\n")
-                            print(final_conditions)
-
-                            # Preview the final data structure
-                            cat("\nThe head of data structure with the assigned conditions:\n")
-                            print(head(combined_data))
-                            write.csv(combined_data, get_output_path("combined_data.csv"), row.names = TRUE)
-                            cat("Combined data saved as 'combined_data.csv'\n")
-
-                        }
-                    }
-
+                            # navigate_back <- FALSE
+                            break # Success, exit loop        
+                        }, error = function(e) {
+                            cat("Error aligning sample info with count matrix: ", e$message, "\n")
+                            next # Retry alignment
+                        })
+                    } 
+                    
                     names(combined_data) <- c("geneID", final_conditions$Sample)
                     row.names(combined_data) <- combined_data$geneID
                     combined_data$geneID <- NULL
@@ -3952,107 +3228,155 @@ repeat {
                         cat("Skipping gene ID conversion step.\n")
                     }
 
-                    # Create a sample info table for DESeq2
-                    coldata <- final_conditions[final_conditions$Sample %in% colnames(filtered), ]
+                    # ================================
+                    # Build sample info table for DESeq2
+                    # ================================
+
+                    # Match sample info to filtered matrix columns exactly and in the same order
+                    idx <- match(colnames(filtered), final_conditions$Sample)
+
+                    if (any(is.na(idx))) {
+                        missing_samples <- colnames(filtered)[is.na(idx)]
+                        stop(
+                            paste0(
+                                "The following samples exist in the count matrix but are missing from the sample info table: ",
+                                paste(missing_samples, collapse = ", ")
+                            )
+                        )
+                    }
+
+                    coldata <- final_conditions[idx, , drop = FALSE]
                     rownames(coldata) <- coldata$Sample
                     coldata$Sample <- NULL
 
-                    # make combined conditions vector from the conditions list if there is more than 1 condition
-                    if (ncol(coldata) >= 1) {
-                        if (ncol(coldata) > 1) {
-                            # Dynamically identify columns to exclude
-                            exclude_cols <- sapply(seq_along(coldata), function(idx) {
-                                col <- coldata[[idx]]
-                                # Extract all other columns
-                                other_columns <- coldata[, -idx, drop = FALSE]
-                                # Generate all possible combinations of unique words from other columns
-                                other_combinations <- apply(other_columns, 1, paste, collapse = "_")
-                                # Check if more than half of the column values match the combinations
-                                mean(col %in% other_combinations) > 0.5
-                            })
-                            # Select columns to combine (exclude the identified ones)
-                            columns_to_combine <- coldata[, !exclude_cols, drop = FALSE]
-                            # Avoid duplicating "conditions_combined"
-                            if ("conditions_combined" %in% colnames(coldata) || ncol(columns_to_combine) < ncol(coldata)) {
-                                conditions_combined <- coldata[, ncol(coldata)]
-                                # conditions_combined <- apply(coldata[, 1:(ncol(coldata) - 1), drop = FALSE], 1, paste, collapse = "_")          
-                                # conditions_combined <- apply(coldata[, -ncol(coldata), drop = FALSE], 1, paste, collapse = "_")
-                            } else {
-                                conditions_combined <- apply(columns_to_combine, 1, paste, collapse = "_")
-                            }
-                        } else {
-                            # Handle single-column case
-                            conditions_combined <- coldata[, 1]
-                        }
-                        conditions_combined <- factor(conditions_combined)
-                        coldata$conditions_combined <- conditions_combined
-                    } else {
-                        cat("Error: coldata has no valid columns remaining. Please check the sample info table and try again.\n")
-                        next
+                    # Validate sample info
+                    if (ncol(coldata) == 0) {
+                        stop("Error: sample info contains no condition columns after removing the Sample column.")
                     }
-                    # User option: choose which column (or combined) to use for PCA, RLE, and DESeq design
-                    if (ncol(coldata) > 1) {
-                        design_cols <- setdiff(colnames(coldata), "conditions_combined")
-                        if (length(design_cols) == 0) design_cols <- colnames(coldata)[1]
+
+                    if (anyNA(coldata)) {
+                        stop("Error: sample info contains missing values. Please fill or remove NA values before continuing.")
+                    }
+
+                    # Keep only original metadata columns here
+                    metadata_cols <- colnames(coldata)
+
+                    # ================================
+                    # Choose grouping variable
+                    # ================================
+
+                    if (length(metadata_cols) == 1) {
+                        # Single condition column: use it directly
+                        conditions_combined <- factor(coldata[[metadata_cols[1]]])
+                        chosen_grouping_name <- metadata_cols[1]
+                        cat("\nOnly one condition column detected. Using:", chosen_grouping_name, "\n")
+                    } else {
+                        # Multiple metadata columns: let user choose one column or all combined
                         cat("\nAvailable columns in sample info (for grouping in PCA, RLE, and comparisons):\n")
-                        for (i in seq_along(design_cols)) cat(sprintf("  [%d] %s\n", i, design_cols[i]))
-                        cat(sprintf("  [%d] Combined (paste all columns)\n", length(design_cols) + 1))
+                        for (i in seq_along(metadata_cols)) {
+                            cat(sprintf("  [%d] %s\n", i, metadata_cols[i]))
+                        }
+                        cat(sprintf("  [%d] Combined (paste all columns)\n", length(metadata_cols) + 1))
+
                         repeat {
-                            choice_input <- handle_quit(readline("Enter the number of your choice (or 'back' to keep current): "))
-                            if (choice_input == "back") break
-                            idx <- as.numeric(choice_input)
-                            if (!is.na(idx) && idx >= 1 && idx <= length(design_cols) + 1) {
-                                if (idx <= length(design_cols)) {
-                                    conditions_combined <- coldata[[design_cols[idx]]]
+                            choice_input <- handle_quit(readline("Enter the number of your choice: "))
+                            choice_idx <- suppressWarnings(as.numeric(choice_input))
+
+                            if (!is.na(choice_idx) && choice_idx >= 1 && choice_idx <= length(metadata_cols) + 1) {
+                                if (choice_idx <= length(metadata_cols)) {
+                                    chosen_grouping_name <- metadata_cols[choice_idx]
+                                    conditions_combined <- factor(coldata[[chosen_grouping_name]])
+                                    cat("Using", chosen_grouping_name, "for grouping.\n")
                                 } else {
-                                    conditions_combined <- apply(coldata[, design_cols, drop = FALSE], 1, paste, collapse = "_")
+                                    chosen_grouping_name <- "Combined"
+                                    conditions_combined <- factor(apply(coldata[, metadata_cols, drop = FALSE], 1, paste, collapse = "_"))
+                                    cat("Using combined columns for grouping.\n")
                                 }
-                                conditions_combined <- factor(conditions_combined)
-                                coldata$conditions_combined <- conditions_combined
-                                cat("Using", if (idx <= length(design_cols)) design_cols[idx] else "Combined", "for grouping.\n")
                                 break
                             }
-                            cat("Invalid choice. Please enter a number between 1 and", length(design_cols) + 1, ".\n")
+
+                            cat("Invalid choice. Please enter a number between 1 and", length(metadata_cols) + 1, ".\n")
                         }
                     }
-                    conditions_combined <- factor(conditions_combined)
-                    # Preview of chosen condition column
+
+                    # Add grouping column only after the selection is finalized
+                    coldata$conditions_combined <- conditions_combined
+
+                    # ================================
+                    # Preview grouping
+                    # ================================
+
                     cat("\nCondition column preview (sample -> grouping):\n")
-                    print(data.frame(Sample = rownames(coldata), Condition = coldata$conditions_combined, row.names = NULL))
+                    print(data.frame(
+                        Sample = rownames(coldata),
+                        Condition = coldata$conditions_combined,
+                        row.names = NULL
+                    ))
+
                     cat("\nCounts per condition:\n")
                     print(table(coldata$conditions_combined))
-                
-                    # Order coldata by the combined conditions and reorder the filtered data accordingly
-                    coldata <- coldata[order(coldata$conditions_combined, decreasing = TRUE), ]
-                    filtered <- filtered[, rownames(coldata)]
 
-                    # Clean up the filtered data
+                    # ================================
+                    # Optional: remove duplicated ORIGINAL metadata columns
+                    # Do NOT compare/remove conditions_combined here
+                    # ================================
+
+                    meta_only <- coldata[, metadata_cols, drop = FALSE]
+
+                    if (ncol(meta_only) > 1) {
+                        keep_cols <- rep(TRUE, ncol(meta_only))
+
+                        for (i in seq_len(ncol(meta_only) - 1)) {
+                            if (!keep_cols[i]) next
+
+                            for (j in seq((i + 1), ncol(meta_only))) {
+                                if (!keep_cols[j]) next
+
+                                if (identical(as.character(meta_only[[i]]), as.character(meta_only[[j]]))) {
+                                    cat(sprintf(
+                                        "The column '%s' is identical to '%s'. Removing '%s'.\n",
+                                        colnames(meta_only)[i], colnames(meta_only)[j], colnames(meta_only)[j]
+                                    ))
+                                    keep_cols[j] <- FALSE
+                                }
+                            }
+                        }
+
+                        meta_only <- meta_only[, keep_cols, drop = FALSE]
+                    }
+
+                    metadata_cols <- colnames(meta_only)
+
+                    # Rebuild coldata cleanly
+                    coldata <- cbind(meta_only, conditions_combined = conditions_combined)
+
+                    # ================================
+                    # Reorder samples by grouping
+                    # ================================
+
+                    ord <- order(coldata$conditions_combined)
+                    coldata <- coldata[ord, , drop = FALSE]
+                    filtered <- filtered[, rownames(coldata), drop = FALSE]
+
+                    # ================================
+                    # Clean up filtered count matrix
+                    # ================================
+
                     colnames(filtered) <- make.unique(colnames(filtered))
                     filtered <- as.matrix(filtered)
                     filtered[is.na(filtered)] <- 0
                     filtered[is.nan(filtered)] <- 0
                     filtered[is.infinite(filtered)] <- 0
 
-                    conditions_combined <- coldata$conditions_combined
+                    # Keep grouping vector synchronized
+                    conditions_combined <- factor(coldata$conditions_combined)
 
-                    i <- 1
-                    while (i < ncol(coldata)) {  # Use while to dynamically adjust column count
-                        for (j in (i + 1):ncol(coldata)) {
-                            if (all(coldata[, i] == coldata[, j])) {  # Check if column values are identical
-                                cat(sprintf("The column %s is the same as the column %s. Removing the first duplicated column.\n",
-                                            colnames(coldata)[i], colnames(coldata)[j]))
-                                coldata <- coldata[, -i, drop = FALSE]  # Remove first duplicated column
-                                i <- i - 1  # Adjust index to stay at the correct position
-                                break  # Restart comparison for the new structure
-                            }
-                        }
-                        i <- i + 1  # Move to the next column
-                    }
+                    # ================================
+                    # Debug print
+                    # ================================
 
-                    # Print the coldata for debugging
                     cat("\nSample info table for DESeq2:\n")
                     print(coldata)
-
                     # Create the expression set for further analysis
                     set <- newSeqExpressionSet(as.matrix(filtered),
                                                 phenoData = data.frame(conditions_combined, row.names = colnames(filtered)))
@@ -4086,10 +3410,6 @@ repeat {
 
                     # Map the custom colors to condition levels
                     colors <- setNames(custom_colors[1:nlevels(conditions_combined)], levels(conditions_combined))
-
-                    # # Generate color palette
-                    # colors <- brewer.pal(max(3, nlevels(conditions_combined)), "Set3")[1:nlevels(conditions_combined)]
-                    # names(colors) <- levels(conditions_combined)
 
                     # Plot RLE and PCA with error handling
                     cat("Creating plots...\n")
@@ -4133,65 +3453,95 @@ repeat {
 
                     # Option to change condition column after raw PCA/RLE
                     repeat {
+                        if (length(metadata_cols) <= 1) {
+                            # cat("Only one column in sample info. No other choice available.\n")
+                            break
+                        }
                         cat("Would you like to use a different condition column for grouping? (y/n):\n")
                         change_cond_ans <- handle_quit(readline())
                         if (tolower(change_cond_ans) != "y") break
-                        if (ncol(coldata) <= 1) { cat("Only one column in sample info. No other choice available.\n"); break }
-                        design_cols <- setdiff(colnames(coldata), "conditions_combined")
-                        if (length(design_cols) == 0) design_cols <- colnames(coldata)[1]
+                        design_cols <- metadata_cols
+
                         cat("\nAvailable columns in sample info (for grouping in PCA, RLE, and comparisons):\n")
-                        for (i in seq_along(design_cols)) cat(sprintf("  [%d] %s\n", i, design_cols[i]))
+                        for (i in seq_along(design_cols)) {
+                            cat(sprintf("  [%d] %s\n", i, design_cols[i]))
+                        }
                         cat(sprintf("  [%d] Combined (paste all columns)\n", length(design_cols) + 1))
+
                         updated_cond <- FALSE
+
                         repeat {
                             choice_input <- handle_quit(readline("Enter the number of your choice (or 'back' to keep current): "))
                             if (choice_input == "back") break
-                            idx <- as.numeric(choice_input)
+                            idx <- suppressWarnings(as.numeric(choice_input))
+
                             if (!is.na(idx) && idx >= 1 && idx <= length(design_cols) + 1) {
                                 if (idx <= length(design_cols)) {
-                                    conditions_combined <- coldata[[design_cols[idx]]]
+                                    chosen_grouping_name <- design_cols[idx]
+                                    conditions_combined <- factor(coldata[[chosen_grouping_name]])
                                 } else {
-                                    conditions_combined <- apply(coldata[, design_cols, drop = FALSE], 1, paste, collapse = "_")
+                                    chosen_grouping_name <- "Combined"
+                                    conditions_combined <- factor(apply(coldata[, design_cols, drop = FALSE], 1, paste, collapse = "_"))
                                 }
-                                conditions_combined <- factor(conditions_combined)
+
                                 coldata$conditions_combined <- conditions_combined
-                                if (exists("set")) pData(set)$conditions_combined <- conditions_combined
-                                if (exists("set4")) pData(set4)$conditions_combined <- conditions_combined
+
+                                if (exists("set")) {
+                                    pData(set)$conditions_combined <- conditions_combined
+                                }
+                                if (exists("set4")) {
+                                    pData(set4)$conditions_combined <- conditions_combined
+                                }
                                 if (length(custom_colors) < nlevels(conditions_combined)) {
                                     cat("Not enough custom colors defined for all conditions. Keeping current colors.\n")
                                 } else {
                                     colors <- setNames(custom_colors[1:nlevels(conditions_combined)], levels(conditions_combined))
                                 }
-                                cat("Using", if (idx <= length(design_cols)) design_cols[idx] else "Combined", "for grouping.\n")
+
+                                cat("Using", chosen_grouping_name, "for grouping.\n")
                                 updated_cond <- TRUE
                                 break
                             }
                             cat("Invalid choice. Please enter a number between 1 and", length(design_cols) + 1, ".\n")
                         }
                         if (!updated_cond) break
+
                         tryCatch({
                             plotRLE(set, outline = FALSE, ylim = c(-1.5, 1.5), col = colors[conditions_combined])
                             png(get_pca_rle_path("raw", "RLE_plot.png"), width = 900, height = 500)
                             plotRLE(set, outline = FALSE, ylim = c(-1.5, 1.5), col = colors[conditions_combined])
                             dev.off()
+
                             svg(get_pca_rle_path("raw", "RLE_plot.svg"), width = 900/72, height = 500/72)
                             plotRLE(set, outline = FALSE, ylim = c(-1.5, 1.5), col = colors[conditions_combined])
                             dev.off()
+
                             plotPCA(set, col = colors[conditions_combined], cex = 1.2)
                             legend("topright", legend = levels(conditions_combined), col = colors, pch = 16, cex = 0.8)
+
                             png(get_pca_rle_path("raw", "PCA_plot.png"), width = 900, height = 900)
                             plotPCA(set, col = colors[conditions_combined], cex = 1.2)
                             legend("topright", legend = levels(conditions_combined), col = colors, pch = 16, cex = 0.8)
                             dev.off()
+
                             svg(get_pca_rle_path("raw", "PCA_plot.svg"), width = 900/72, height = 900/72)
                             plotPCA(set, col = colors[conditions_combined], cex = 1.2)
                             legend("topright", legend = levels(conditions_combined), col = colors, pch = 16, cex = 0.8)
                             dev.off()
-                            plotPCA_custom(set, group = conditions_combined, colors = colors,
-                                prefix = get_pca_rle_path("raw", "newPCA_plot"), width = 6, height = 6, dpi = 300)
-                        }, error = function(e) cat("Error re-plotting:", e$message, "\n"))
-                    }
 
+                            plotPCA_custom(
+                                set,
+                                group = conditions_combined,
+                                colors = colors,
+                                prefix = get_pca_rle_path("raw", "newPCA_plot"),
+                                width = 6,
+                                height = 6,
+                                dpi = 300
+                            )
+                        }, error = function(e) {
+                            cat("Error re-plotting:", e$message, "\n")
+                        })
+                    }
                     # 8. Normalization and RUV adjustment
                     cat("To normalize? y/n (or type 'quit' to exit):\n")
                     norm_choice <- handle_quit(readline())
@@ -4229,62 +3579,55 @@ repeat {
                                     dpi           = 300)
 
                         # Option to change condition column after normalised PCA/RLE
-                        repeat {
+                        repeat{
+                            if(length(metadata_cols)<=1){
+                                break
+                            }
                             cat("Would you like to use a different condition column for grouping? (y/n):\n")
-                            change_cond_ans <- handle_quit(readline())
-                            if (tolower(change_cond_ans) != "y") break
-                            if (ncol(coldata) <= 1) { cat("Only one column in sample info. No other choice available.\n"); break }
-                            design_cols <- setdiff(colnames(coldata), "conditions_combined")
-                            if (length(design_cols) == 0) design_cols <- colnames(coldata)[1]
+                            change_cond_ans<-handle_quit(readline())
+                            if(tolower(change_cond_ans)!="y")break
+                            design_cols<-metadata_cols
                             cat("\nAvailable columns in sample info (for grouping in PCA, RLE, and comparisons):\n")
-                            for (i in seq_along(design_cols)) cat(sprintf("  [%d] %s\n", i, design_cols[i]))
-                            cat(sprintf("  [%d] Combined (paste all columns)\n", length(design_cols) + 1))
-                            updated_cond <- FALSE
-                            repeat {
-                                choice_input <- handle_quit(readline("Enter the number of your choice (or 'back' to keep current): "))
-                                if (choice_input == "back") break
-                                idx <- as.numeric(choice_input)
-                                if (!is.na(idx) && idx >= 1 && idx <= length(design_cols) + 1) {
-                                    if (idx <= length(design_cols)) {
-                                        conditions_combined <- coldata[[design_cols[idx]]]
-                                    } else {
-                                        conditions_combined <- apply(coldata[, design_cols, drop = FALSE], 1, paste, collapse = "_")
-                                    }
-                                    conditions_combined <- factor(conditions_combined)
-                                    coldata$conditions_combined <- conditions_combined
-                                    if (exists("set")) pData(set)$conditions_combined <- conditions_combined
-                                    if (exists("set4")) pData(set4)$conditions_combined <- conditions_combined
-                                    if (length(custom_colors) < nlevels(conditions_combined)) {
-                                        cat("Not enough custom colors defined for all conditions. Keeping current colors.\n")
-                                    } else {
-                                        colors <- setNames(custom_colors[1:nlevels(conditions_combined)], levels(conditions_combined))
-                                    }
-                                    cat("Using", if (idx <= length(design_cols)) design_cols[idx] else "Combined", "for grouping.\n")
-                                    updated_cond <- TRUE
+                            for(i in seq_along(design_cols))cat(sprintf("  [%d] %s\n",i,design_cols[i]))
+                            cat(sprintf("  [%d] Combined (paste all columns)\n",length(design_cols)+1))
+                            updated_cond<-FALSE
+                            repeat{
+                                choice_input<-handle_quit(readline("Enter the number of your choice (or 'back' to keep current): "))
+                                if(choice_input=="back")break
+                                idx<-suppressWarnings(as.numeric(choice_input))
+                                if(!is.na(idx)&&idx>=1&&idx<=length(design_cols)+1){
+                                    if(idx<=length(design_cols)){chosen_grouping_name<-design_cols[idx];conditions_combined<-factor(coldata[[chosen_grouping_name]])}
+                                    else{chosen_grouping_name<-"Combined";conditions_combined<-factor(apply(coldata[,design_cols,drop=FALSE],1,paste,collapse="_"))}
+                                    coldata$conditions_combined<-conditions_combined
+                                    if(exists("set"))pData(set)$conditions_combined<-conditions_combined
+                                    if(exists("set4"))pData(set4)$conditions_combined<-conditions_combined
+                                    if(length(custom_colors)<nlevels(conditions_combined)){cat("Not enough custom colors defined for all conditions. Keeping current colors.\n")}
+                                    else{colors<-setNames(custom_colors[1:nlevels(conditions_combined)],levels(conditions_combined))}
+                                    cat("Using",chosen_grouping_name,"for grouping.\n")
+                                    updated_cond<-TRUE
                                     break
                                 }
-                                cat("Invalid choice. Please enter a number between 1 and", length(design_cols) + 1, ".\n")
+                                cat("Invalid choice. Please enter a number between 1 and",length(design_cols)+1,".\n")
                             }
-                            if (!updated_cond) break
+                            if(!updated_cond)break
                             tryCatch({
-                                plotRLE(set1, outline = FALSE, ylim = c(-1.5, 1.5), col = colors[conditions_combined])
-                                png(get_pca_rle_path("normalised", "RLE_plot.png"), width = 900, height = 500)
-                                plotRLE(set1, outline = FALSE, ylim = c(-1.5, 1.5), col = colors[conditions_combined])
+                                plotRLE(set1,outline=FALSE,ylim=c(-1.5,1.5),col=colors[conditions_combined])
+                                png(get_pca_rle_path("normalised","RLE_plot.png"),width=900,height=500)
+                                plotRLE(set1,outline=FALSE,ylim=c(-1.5,1.5),col=colors[conditions_combined])
                                 dev.off()
-                                svg(get_pca_rle_path("normalised", "RLE_plot.svg"), width = 900/72, height = 500/72)
-                                plotRLE(set1, outline = FALSE, ylim = c(-1.5, 1.5), col = colors[conditions_combined])
+                                svg(get_pca_rle_path("normalised","RLE_plot.svg"),width=900/72,height=500/72)
+                                plotRLE(set1,outline=FALSE,ylim=c(-1.5,1.5),col=colors[conditions_combined])
                                 dev.off()
-                                png(get_pca_rle_path("normalised", "PCA_plot.png"), width = 900, height = 900)
-                                plotPCA(set1, col = colors[conditions_combined], cex = 1.2)
-                                legend("topright", legend = levels(conditions_combined), col = colors, pch = 16, cex = 0.8)
+                                png(get_pca_rle_path("normalised","PCA_plot.png"),width=900,height=900)
+                                plotPCA(set1,col=colors[conditions_combined],cex=1.2)
+                                legend("topright",legend=levels(conditions_combined),col=colors,pch=16,cex=0.8)
                                 dev.off()
-                                svg(get_pca_rle_path("normalised", "PCA_plot.svg"), width = 900/72, height = 900/72)
-                                plotPCA(set1, col = colors[conditions_combined], cex = 1.2)
-                                legend("topright", legend = levels(conditions_combined), col = colors, pch = 16, cex = 0.8)
+                                svg(get_pca_rle_path("normalised","PCA_plot.svg"),width=900/72,height=900/72)
+                                plotPCA(set1,col=colors[conditions_combined],cex=1.2)
+                                legend("topright",legend=levels(conditions_combined),col=colors,pch=16,cex=0.8)
                                 dev.off()
-                                plotPCA_custom(set1, group = conditions_combined, colors = colors,
-                                    prefix = get_pca_rle_path("normalised", "newPCA_plot"), width = 6, height = 6, dpi = 300)
-                            }, error = function(e) cat("Error re-plotting:", e$message, "\n"))
+                                plotPCA_custom(set1,group=conditions_combined,colors=colors,prefix=get_pca_rle_path("normalised","newPCA_plot"),width=6,height=6,dpi=300)
+                            },error=function(e)cat("Error re-plotting:",e$message,"\n"))
                         }
 
                         cat("To remove the unwanted variation? y/n (or type 'quit' to exit):\n")
@@ -4370,12 +3713,13 @@ repeat {
 
                                         # Option to change condition column after RUV PCA/RLE
                                         repeat {
+                                            if (length(metadata_cols) <= 1) {
+                                                break
+                                            }
                                             cat("Would you like to use a different condition column for grouping? (y/n):\n")
                                             change_cond_ans <- handle_quit(readline())
                                             if (tolower(change_cond_ans) != "y") break
-                                            if (ncol(coldata) <= 1) { cat("Only one column in sample info. No other choice available.\n"); break }
-                                            design_cols <- setdiff(colnames(coldata), "conditions_combined")
-                                            if (length(design_cols) == 0) design_cols <- colnames(coldata)[1]
+                                            design_cols <- metadata_cols
                                             cat("\nAvailable columns in sample info (for grouping in PCA, RLE, and comparisons):\n")
                                             for (i in seq_along(design_cols)) cat(sprintf("  [%d] %s\n", i, design_cols[i]))
                                             cat(sprintf("  [%d] Combined (paste all columns)\n", length(design_cols) + 1))
@@ -4383,14 +3727,15 @@ repeat {
                                             repeat {
                                                 choice_input <- handle_quit(readline("Enter the number of your choice (or 'back' to keep current): "))
                                                 if (choice_input == "back") break
-                                                idx <- as.numeric(choice_input)
+                                                idx <- suppressWarnings(as.numeric(choice_input))
                                                 if (!is.na(idx) && idx >= 1 && idx <= length(design_cols) + 1) {
                                                     if (idx <= length(design_cols)) {
-                                                        conditions_combined <- coldata[[design_cols[idx]]]
+                                                        chosen_grouping_name <- design_cols[idx]
+                                                        conditions_combined <- factor(coldata[[chosen_grouping_name]])
                                                     } else {
-                                                        conditions_combined <- apply(coldata[, design_cols, drop = FALSE], 1, paste, collapse = "_")
+                                                        chosen_grouping_name <- "Combined"
+                                                        conditions_combined <- factor(apply(coldata[, design_cols, drop = FALSE], 1, paste, collapse = "_"))
                                                     }
-                                                    conditions_combined <- factor(conditions_combined)
                                                     coldata$conditions_combined <- conditions_combined
                                                     if (exists("set")) pData(set)$conditions_combined <- conditions_combined
                                                     if (exists("set4")) pData(set4)$conditions_combined <- conditions_combined
@@ -4399,7 +3744,7 @@ repeat {
                                                     } else {
                                                         colors <- setNames(custom_colors[1:nlevels(conditions_combined)], levels(conditions_combined))
                                                     }
-                                                    cat("Using", if (idx <= length(design_cols)) design_cols[idx] else "Combined", "for grouping.\n")
+                                                    cat("Using", chosen_grouping_name, "for grouping.\n")
                                                     updated_cond <- TRUE
                                                     break
                                                 }
@@ -4429,8 +3774,6 @@ repeat {
 
                                         ruv_done <- TRUE  # Mark RUV as completed
                                     }, error = function(e) {
-                                        # cat("Error during RUV adjustment with k =", k, ". Please try again.\n")
-                                        # next
                                         cat("⚠️ RUV Normalization Failed (Both Residual Methods). Skipping RUV adjustment.\n")
                                         set4 <<- set1  # Use normalized set instead of stopping
                                         k <<- 0  # No RUV adjustment
@@ -4619,11 +3962,11 @@ repeat {
 
                                     # Validate sample index for removal
                                     repeat {
-                                        cat("\nPlease select the index of the sample to remove (or type 'quit' to exit manual mode):\n")
+                                        cat("\nPlease select the index of the sample to remove (or type 'done' to exit manual mode):\n")
                                         sample_index_input <- handle_quit(readline())
                                         sample_index <- as.numeric(sample_index_input)
 
-                                        if (tolower(sample_index_input) == "quit") {
+                                        if (tolower(sample_index_input) == "done") {
                                             break
                                         } else if (!is.na(sample_index) && sample_index >= 1 && sample_index <= length(sample_names)) {
                                             sample_to_remove <- sample_names[sample_index]
@@ -4642,7 +3985,6 @@ repeat {
                                             d4 <- dist(t(if (ruv_done == TRUE) normCounts(set4) else counts(set4)))
                                             hc4 <- hclust(d4)
                                             plot_clustering()
-                                            # break
                                         } else {
                                             cat("Invalid index. Please try again.\n")
                                         }
@@ -4686,12 +4028,13 @@ repeat {
 
                     # Option to change condition column after outlier removal, before DESeq
                     repeat {
+                        if (length(metadata_cols) <= 1) {
+                            break
+                        }
                         cat("Would you like to use a different condition column for grouping? (y/n):\n")
                         change_cond_ans <- handle_quit(readline())
                         if (tolower(change_cond_ans) != "y") break
-                        if (ncol(coldata) <= 1) { cat("Only one column in sample info. No other choice available.\n"); break }
-                        design_cols <- setdiff(colnames(coldata), "conditions_combined")
-                        if (length(design_cols) == 0) design_cols <- colnames(coldata)[1]
+                        design_cols <- metadata_cols
                         cat("\nAvailable columns in sample info (for grouping in PCA, RLE, and comparisons):\n")
                         for (i in seq_along(design_cols)) cat(sprintf("  [%d] %s\n", i, design_cols[i]))
                         cat(sprintf("  [%d] Combined (paste all columns)\n", length(design_cols) + 1))
@@ -4699,14 +4042,15 @@ repeat {
                         repeat {
                             choice_input <- handle_quit(readline("Enter the number of your choice (or 'back' to keep current): "))
                             if (choice_input == "back") break
-                            idx <- as.numeric(choice_input)
+                            idx <- suppressWarnings(as.numeric(choice_input))
                             if (!is.na(idx) && idx >= 1 && idx <= length(design_cols) + 1) {
                                 if (idx <= length(design_cols)) {
-                                    conditions_combined <- coldata[[design_cols[idx]]]
+                                    chosen_grouping_name <- design_cols[idx]
+                                    conditions_combined <- factor(coldata[[chosen_grouping_name]])
                                 } else {
-                                    conditions_combined <- apply(coldata[, design_cols, drop = FALSE], 1, paste, collapse = "_")
+                                    chosen_grouping_name <- "Combined"
+                                    conditions_combined <- factor(apply(coldata[, design_cols, drop = FALSE], 1, paste, collapse = "_"))
                                 }
-                                conditions_combined <- factor(conditions_combined)
                                 coldata$conditions_combined <- conditions_combined
                                 if (exists("set")) pData(set)$conditions_combined <- conditions_combined
                                 if (exists("set4")) pData(set4)$conditions_combined <- conditions_combined
@@ -4715,7 +4059,7 @@ repeat {
                                 } else {
                                     colors <- setNames(custom_colors[1:nlevels(conditions_combined)], levels(conditions_combined))
                                 }
-                                cat("Using", if (idx <= length(design_cols)) design_cols[idx] else "Combined", "for grouping.\n")
+                                cat("Using", chosen_grouping_name, "for grouping.\n")
                                 updated_cond <- TRUE
                                 break
                             }
@@ -4728,7 +4072,6 @@ repeat {
                             plot_clustering()
                         }, error = function(e) cat("Error re-plotting clustering:", e$message, "\n"))
                     }
-
                     # Save the filtered data, normalized data, and coldata
                     cat("\nData saved to the following files:\n")
 
@@ -4752,18 +4095,22 @@ repeat {
                     }
 
                     # Design choice: single combined condition vs multiple condition columns
+                    # Design choice: single combined condition vs multiple condition columns
                     design_single <- TRUE
                     design_rhs_multi <- NULL
                     design_cols_selected <- NULL
                     cat("\nUse (1) single combined condition for design, or (2) select multiple condition columns for design (e.g. ~cond_i + cond_j)?\n")
                     repeat {
+                        if (length(metadata_cols) <= 1) {
+                            cat("Only one design column available. Using single combined condition.\n")
+                            break
+                        }
                         design_mode_input <- handle_quit(readline("Enter 1 or 2 (or 'back' to use single): "))
                         if (design_mode_input == "back") break
-                        design_mode <- as.numeric(design_mode_input)
+                        design_mode <- suppressWarnings(as.numeric(design_mode_input))
                         if (!is.na(design_mode) && design_mode %in% c(1, 2)) {
                             if (design_mode == 1) break
-                            design_cols_avail <- setdiff(colnames(coldata), "conditions_combined")
-                            if (length(design_cols_avail) == 0) design_cols_avail <- colnames(coldata)[1]
+                            design_cols_avail <- metadata_cols
                             if (length(design_cols_avail) < 2) {
                                 cat("Only one design column available. Using single combined condition.\n")
                                 break
@@ -4772,7 +4119,7 @@ repeat {
                             for (i in seq_along(design_cols_avail)) cat(sprintf("  [%d] %s\n", i, design_cols_avail[i]))
                             design_indices_input <- handle_quit(readline("Enter column indices to include in design: "))
                             if (design_indices_input == "back") break
-                            design_indices <- as.numeric(trimws(unlist(strsplit(design_indices_input, ","))))
+                            design_indices <- suppressWarnings(as.numeric(trimws(unlist(strsplit(design_indices_input, ",")))))
                             design_indices <- design_indices[!is.na(design_indices) & design_indices >= 1 & design_indices <= length(design_cols_avail)]
                             if (length(design_indices) == 0) {
                                 cat("No valid indices. Using single combined condition.\n")
@@ -4790,32 +4137,30 @@ repeat {
                     # 10. DESeq2 Dataset Creation
                     if (design_single) {
                         if (k == 0) {
-                            # No RUV adjustment; use raw counts
                             cat("\nCreating DESeq2 dataset with raw counts and ~conditions_combined...\n")
                             tryCatch({
-                            dds <- DESeqDataSetFromMatrix(countData = counts(set4), 
-                                                            colData = pData(set4), 
-                                                            design = ~ conditions_combined)
+                                dds <- DESeqDataSetFromMatrix(countData = counts(set4),
+                                                              colData = pData(set4),
+                                                              design = ~ conditions_combined)
                             }, error = function(e) {
                                 cat("Error creating DESeq2 dataset. Please ensure the input data is correctly formatted:", e$message, "\n")
                                 next
                             })
                         } else {
-                            # RUV adjustment applied
                             dds_choice <- "n"
                             tryCatch({
                                 if (tolower(dds_choice) == "y") {
                                     cat("\nCreating DESeq2 dataset with normalized data and ~conditions_combined...\n")
-                                    dds <- DESeqDataSetFromMatrix(countData = normCounts(set4), 
-                                                                colData = pData(set4), 
-                                                                design = ~ conditions_combined)
+                                    dds <- DESeqDataSetFromMatrix(countData = normCounts(set4),
+                                                                  colData = pData(set4),
+                                                                  design = ~ conditions_combined)
                                 } else {
                                     cat("\nCreating DESeq2 dataset with raw counts and design formula including W factors...\n")
                                     w_factors <- paste0("W_", seq_len(k), collapse = " + ")
                                     design_formula <- as.formula(paste("~", w_factors, "+ conditions_combined"))
-                                    dds <- DESeqDataSetFromMatrix(countData = counts(set4), 
-                                                                colData = pData(set4), 
-                                                                design = design_formula)
+                                    dds <- DESeqDataSetFromMatrix(countData = counts(set4),
+                                                                  colData = pData(set4),
+                                                                  design = design_formula)
                                 }
                             }, error = function(e) {
                                 cat("Error creating DESeq2 dataset. Please ensure the input data is correctly formatted:", e$message, "\n")
@@ -4823,7 +4168,6 @@ repeat {
                             })
                         }
                     } else {
-                        # Multi-factor design: ~cond_i + ... + cond_j (optionally + W_1+...+W_k)
                         colData_dds <- as.data.frame(pData(set4))
                         for (cn in design_cols_selected) {
                             cname <- make.names(cn)
@@ -4833,9 +4177,9 @@ repeat {
                             design_formula <- as.formula(paste("~", design_rhs_multi))
                             cat("\nCreating DESeq2 dataset with raw counts and design", paste("~", design_rhs_multi), "\n")
                             tryCatch({
-                                dds <- DESeqDataSetFromMatrix(countData = counts(set4), 
-                                                            colData = colData_dds, 
-                                                            design = design_formula)
+                                dds <- DESeqDataSetFromMatrix(countData = counts(set4),
+                                                              colData = colData_dds,
+                                                              design = design_formula)
                             }, error = function(e) {
                                 cat("Error creating DESeq2 dataset. Please ensure the input data is correctly formatted:", e$message, "\n")
                                 next
@@ -4845,9 +4189,9 @@ repeat {
                             design_formula <- as.formula(paste("~", w_factors, "+", design_rhs_multi))
                             cat("\nCreating DESeq2 dataset with raw counts and design", paste("~", w_factors, "+", design_rhs_multi), "\n")
                             tryCatch({
-                                dds <- DESeqDataSetFromMatrix(countData = counts(set4), 
-                                                            colData = colData_dds, 
-                                                            design = design_formula)
+                                dds <- DESeqDataSetFromMatrix(countData = counts(set4),
+                                                              colData = colData_dds,
+                                                              design = design_formula)
                             }, error = function(e) {
                                 cat("Error creating DESeq2 dataset. Please ensure the input data is correctly formatted:", e$message, "\n")
                                 next
@@ -5650,11 +4994,12 @@ repeat {
                     } else {
                         cat("No comparisons were performed.\n")
                     }
-                } else {
+                } # Perform Differential Expression Analysis Without Processing Count Files
+                else {
                     cat("Invalid choice. Please enter a valid number between 1 and 2.\n")
-                }
-            }
-        }
+                } # repeat for analysis options
+            } # repeat for data input choice
+        } # Process count files and perform differential expression analysis
         if (menu_choice == 3) {
             # **Option 3: Load DEGs & genomic results from Files**
             repeat {
